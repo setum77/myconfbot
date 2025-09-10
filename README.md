@@ -56,3 +56,41 @@ myconfbot
 └─ uv.lock
 
 ```
+
+11.09.25
+```
+myconfbot
+├─ config
+├─ pyproject.toml
+├─ README.md
+├─ src
+│  └─ myconfbot
+│     ├─ bot.py
+│     ├─ config.py
+│     ├─ handlers
+│     │  ├─ admin_handlers.py
+│     │  ├─ main_handlers.py
+│     │  ├─ order_handlers.py
+│     │  ├─ recipe_handlers.py
+│     │  └─ __init__.py
+│     ├─ init_db.py
+│     ├─ keyboards
+│     ├─ models
+│     │  └─ __init__.py
+│     ├─ states
+│     ├─ utils
+│     │  ├─ database.py
+│     │  └─ __init__.py
+│     ├─ __init__.py
+│     └─ __main__.py
+├─ tests
+└─ uv.lock
+
+```
+сделано:
+- В папке data добавил confbot.db база SQLite
+- Инициализация через init_db.py
+```shell
+uv run python -m src.myconfbot.init_db
+```
+- Добавил админ панель, команда `/admin` в телеграм-боте. Пока только без взаимодействия с DB
