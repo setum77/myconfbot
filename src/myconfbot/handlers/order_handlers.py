@@ -1,6 +1,11 @@
 from telebot import types
+from src.myconfbot.utils.database import db_manager
+from src.myconfbot.models import Order, OrderStatus, OrderItem
+from src.myconfbot.handlers.admin_handlers import notify_admins_new_order
 
+# В обработчике создания заказа:
 def register_order_handlers(bot):
+    
     @bot.message_handler(func=lambda message: message.text == '🎂 Сделать заказ')
     def start_order(message):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -28,4 +33,30 @@ def register_order_handlers(bot):
     def back_to_main(message):
         from .main_handlers import send_welcome
         send_welcome(message)
+    
+    # После создания заказа в БД:
+    session = db_manager.get_session()
+    try:
+        customer = db_manager.add_customer(
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.first_name
+        )
         
+        order = Order(
+            customer_id=customer.id,
+            special_requests=special_requests,
+            total_amount=total_amount
+        )
+        session.add(order)
+        session.commit()
+        
+        # Уведомляем админов
+        notify_admins_new_order(bot, order)
+        
+    except Exception as e:
+        session.rollback()
+        # Обработка ошибки
+    finally:
+        db_manager.close_session()
+       

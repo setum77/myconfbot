@@ -6,20 +6,41 @@ from dotenv import load_dotenv
 # Загружаем переменные окружения
 load_dotenv()
 
+class DatabaseConfig:
+    def __init__(self, path: str = None):
+        self.path = path or os.getenv('DATABASE_URL', 'data/confbot.db')
+
 class Config:
-    # Пути
+    # Константы
     LOGS_DIR = Path('logs')
     LOG_FILE = LOGS_DIR / 'bot.log'
+    
+    def __init__(self):
+        self.bot_token = self.get_bot_token()
+        self.admin_ids = self.get_admin_ids()
+        self.db = DatabaseConfig()
     
     @staticmethod
     def get_bot_token():
         """Получить токен бота из environment variables"""
         token = os.getenv('TELEGRAM_BOT_TOKEN')
         if not token:
-            raise ValueError(
-                "TELEGRAM_BOT_TOKEN not found in environment variables. "
-                "Please create .env file with TELEGRAM_BOT_TOKEN=your_token"
-            )
+            # Попробуем прочитать из файла .env вручную
+            try:
+                if os.path.exists('.env'):
+                    with open('.env', 'r', encoding='utf-8') as f:
+                        for line in f:
+                            if line.startswith('TELEGRAM_BOT_TOKEN='):
+                                token = line.split('=', 1)[1].strip()
+                                break
+            except:
+                pass
+            
+            if not token:
+                raise ValueError(
+                    "TELEGRAM_BOT_TOKEN not found. Create .env file with: "
+                    "TELEGRAM_BOT_TOKEN=your_token_here"
+                )
         return token
     
     @staticmethod
@@ -28,14 +49,14 @@ class Config:
         level = os.getenv('LOG_LEVEL', 'INFO').upper()
         return getattr(logging, level, logging.INFO)
     
-    @staticmethod
-    def setup_logging():
+    @classmethod
+    def setup_logging(cls):
         """Настройка логирования с созданием директорий"""
         # Создаем директорию для логов
-        Config.LOGS_DIR.mkdir(exist_ok=True)
+        cls.LOGS_DIR.mkdir(exist_ok=True)
         
         # Получаем уровень логирования
-        log_level = Config.get_log_level()
+        log_level = cls.get_log_level()
         
         # Форматтер с цветами для консоли
         class ColorFormatter(logging.Formatter):
@@ -68,7 +89,7 @@ class Config:
         
         # Файловый обработчик
         file_handler = logging.FileHandler(
-            Config.LOG_FILE,
+            cls.LOG_FILE,
             encoding='utf-8'
         )
         file_handler.setFormatter(file_formatter)
@@ -83,24 +104,44 @@ class Config:
         logging.basicConfig(
             level=log_level,
             handlers=[file_handler, console_handler],
-            force=True  # Перезаписываем существующие обработчики
+            force=True
         )
         
-        # Создаем и возвращаем логгер
         logger = logging.getLogger('ConfectioneryBot')
-        logger.info("=" * 50)
         logger.info("Настройка логирования завершена")
-        logger.info("Логи будут сохраняться в: %s", Config.LOG_FILE)
-        
         return logger
-            
+
     @staticmethod
-    def get_database_url():
-        """Получить URL базы данных"""
-        return os.getenv('DATABASE_URL', 'sqlite:///data/bot.db')
+    def get_admin_ids():
+        """Получение ID администраторов"""
+        admin_ids_str = os.getenv('ADMIN_IDS', '')
+        if not admin_ids_str:
+            # Попробуем прочитать из файла .env вручную
+            try:
+                if os.path.exists('.env'):
+                    with open('.env', 'r', encoding='utf-8') as f:
+                        for line in f:
+                            if line.startswith('ADMIN_IDS='):
+                                admin_ids_str = line.split('=', 1)[1].strip()
+                                break
+            except:
+                pass
+        
+        if not admin_ids_str:
+            return []  # Пустой список вместо ошибки
+        
+        try:
+            return [int(id_str.strip()) for id_str in admin_ids_str.split(',')]
+        except ValueError:
+            raise ValueError("ADMIN_IDS должны быть числами, разделенными запятыми")
     
-    @staticmethod
-    def get_admin_id():
-        """Получить ID администратора"""
-        admin_id = os.getenv('ADMIN_ID')
-        return int(admin_id) if admin_id else None
+    @classmethod
+    def load(cls):
+        """Загрузка конфигурации - теперь просто создает экземпляр"""
+        return cls()
+    
+    def print_config(self):
+        """Вывод конфигурации для отладки"""
+        print(f"Bot token: {self.bot_token[:10]}...")
+        print(f"Admin IDs: {self.admin_ids}")
+        print(f"DB path: {self.db.path}")

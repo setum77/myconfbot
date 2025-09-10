@@ -5,11 +5,13 @@ description = "Telegram bot for confectioner"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "env>=0.1.0",
     "httpx>=0.28.1",
     "pillow>=11.3.0",
     "pytelegrambotapi>=4.29.1",
     "python-dotenv>=1.1.1",
     "requests>=2.32.5",
+    "sqlalchemy>=2.0.43",
 ]
 
 [dependency-groups]

@@ -52,3 +52,24 @@ def register_main_handlers(bot):
         Для заказа выберите "🎂 Сделать заказ"
         """
         bot.send_message(message.chat.id, services_text)
+        
+    @bot.message_handler(commands=['menu'])
+    def show_menu(message):
+        bot.reply_to(message, "🎂 Наше меню в разработке...")
+    
+    # Добавьте эту команду для отладки
+    @bot.message_handler(commands=['myid'])
+    def show_my_id(message):
+        user_id = message.from_user.id
+        first_name = message.from_user.first_name
+        username = f"@{message.from_user.username}" if message.from_user.username else "нет"
+        
+        bot.send_message(
+            message.chat.id,
+            f"👤 Ваша информация:\n"
+            f"🆔 ID: `{user_id}`\n"
+            f"📛 Имя: {first_name}\n"
+            f"📱 Username: {username}\n\n"
+            f"Сообщите этот ID администратору для добавления в админы.",
+            parse_mode='Markdown'
+        )

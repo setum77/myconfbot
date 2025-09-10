@@ -1,8 +1,15 @@
 import os
+import asyncio
 import logging
 import telebot
-from src.myconfbot.handlers import register_handlers
+
+# from aiogram import Bot, Dispatcher
+# from aiogram.client.default import DefaultBotProperties
+# from aiogram.enums import ParseMode
+
 from src.myconfbot.config import Config
+from src.myconfbot.utils.database import DatabaseManager
+from src.myconfbot.handlers import register_handlers
 
 
 
@@ -37,6 +44,14 @@ class ConfectioneryBot:
         except Exception as e:
             self.logger.critical("✗ Критическая ошибка при инициализации: %s", e, exc_info=True)
             raise
+
+        # Отладочная информация
+        try:
+            config = Config.load()
+            print(f"✅ Admin IDs: {config.admin_ids}")
+            print(f"✅ Database path: {config.db.path}")
+        except Exception as e:
+            print(f"⚠️  Config error: {e}")
     
     def run(self):
         """Запуск бота"""
@@ -63,6 +78,8 @@ class ConfectioneryBot:
         finally:
             self.logger.info("🔚 Бот завершил работу")
             print("Бот завершил работу")
+    
+
 
 def main():
     """Основная функция запуска"""

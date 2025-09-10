@@ -35,7 +35,6 @@ Telegram бот для приема заказов и консультаций �
 myconfbot
 ├─ .python-version
 ├─ config
-├─ main.py
 ├─ pyproject.toml
 ├─ README.md
 ├─ src
