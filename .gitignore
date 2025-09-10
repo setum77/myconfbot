@@ -1,10 +1,13 @@
 # Python-generated files
 __pycache__/
+.vscode/
+.idea/
 *.py[oc]
 build/
 dist/
 wheels/
 *.egg-info
+.python-version
 
 .env
 .env.local
