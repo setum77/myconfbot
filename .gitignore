@@ -1,0 +1,25 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+.env
+.env.local
+.env.prod
+
+# Virtual environments
+.venv
+
+# Логи
+logs/
+*.log
+
+# DB
+data/
+bot.db
+
+# Временные файлы и примеры
+*example.py
