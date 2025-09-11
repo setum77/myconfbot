@@ -28,6 +28,24 @@ def register_main_handlers(bot):
             logging.error(f"Ошибка при проверке администратора: {e}")
             return False
     
+    def show_customer_menu(chat_id, is_admin=False):
+        """Показывает меню клиента с возможностью админ панели"""
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        btn1 = types.KeyboardButton('💼 Услуги')
+        btn2 = types.KeyboardButton('🎂 Сделать заказ')
+        btn3 = types.KeyboardButton('📖 Рецепты')
+        btn4 = types.KeyboardButton('📞 Контакты')
+        btn5 = types.KeyboardButton('🐱 Моя информация')
+        
+        if is_admin:
+            btn_admin = types.KeyboardButton('👑 Админ панель')
+            markup.add(btn1, btn2, btn3, btn4, btn5, btn_admin)
+        else:
+            markup.add(btn1, btn2, btn3, btn4, btn5)
+        
+        welcome_text = "🎂 Добро пожаловать! Выберите действие:"
+        bot.send_message(chat_id, welcome_text, reply_markup=markup)
+    
     @bot.message_handler(commands=['start', 'help'])   
     def handle_start(message):
         user_id = message.from_user.id
@@ -38,6 +56,7 @@ def register_main_handlers(bot):
         try:
             # Сначала проверяем, является ли пользователь администратором
             admin_check = is_user_admin(user_id)
+            is_admin = False
             
             if admin_check is None:
                 # Пользователь есть в конфиге, но нет в базе - сохраняем как админа
@@ -50,77 +69,50 @@ def register_main_handlers(bot):
                     bot.send_message(
                         chat_id, 
                         f"👑 Добро пожаловать, администратор {first_name}!\n"
-                        f"Ваши права подтверждены. Доступ к панели управления открыт."
+                        f"Ваши права подтверждены. Доступ к админ панели открыт."
                     )
-                    # Показываем меню администратора
-                    show_admin_menu(chat_id)
-                    return
+                    is_admin = True
                 except Exception as e:
                     logging.error(f"Ошибка при сохранении администратора: {e}")
                     bot.send_message(chat_id, "Ошибка при активации прав администратора.")
             
             elif admin_check:
                 # Пользователь уже администратор
+                is_admin = True
                 bot.send_message(
                     chat_id, 
-                    f"👑 С возвращением, администратор {first_name}!\n"
-                    f"Панель управления готова к работе."
+                    f"👑 С возвращением, администратор {username}!\n"
+                    f"Доступ к админ панели открыт."
                 )
-                show_admin_menu(chat_id)
-                return
             
-            # Если не администратор - проверяем как клиента
+            # Проверяем как клиента (даже если администратор)
             customer = db_manager.get_customer_by_telegram_id(user_id)
             
             if customer:
                 # Клиент уже есть в базе
                 bot.send_message(chat_id, f"С возвращением, {customer.first_name}! 🎂\nРады снова видеть вас!")
-                show_customer_menu(chat_id)
+                show_customer_menu(chat_id, is_admin)
             else:
-                # Новый клиент
+                # Новый клиент (даже если администратор)
                 bot.send_message(chat_id, "Привет! 👋\nЯ бот кондитерской. Давайте познакомимся!")
                 bot.send_message(chat_id, "Как вас зовут?")
-                user_states[user_id] = 'awaiting_name'
+                # Сохраняем информацию о том, что пользователь админ (если он им является)
+                user_states[user_id] = {'state': 'awaiting_name', 'is_admin': is_admin}
                 
         except Exception as e:
             bot.send_message(chat_id, "Произошла ошибка. Попробуйте позже.")
             logging.error(f"Ошибка при обработке /start: {e}")
     
-    def show_admin_menu(chat_id):
-        """Показывает меню администратора"""
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        btn1 = types.KeyboardButton('📊 Статистика')
-        btn2 = types.KeyboardButton('📦 Заказы')
-        btn3 = types.KeyboardButton('👥 Клиенты')
-        btn4 = types.KeyboardButton('🏪 В меню клиента')
-        markup.add(btn1, btn2, btn3, btn4)
-        
-        admin_text = "👑 Панель администратора\nВыберите действие:"
-        bot.send_message(chat_id, admin_text, reply_markup=markup)
-    
-    def show_customer_menu(chat_id):
-        """Показывает меню клиента"""
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        btn1 = types.KeyboardButton('🎂 Сделать заказ')
-        btn2 = types.KeyboardButton('📖 Рецепты')
-        btn3 = types.KeyboardButton('💼 Услуги')
-        btn4 = types.KeyboardButton('📞 Контакты')
-        markup.add(btn1, btn2, btn3, btn4)
-        
-        welcome_text = "🎂 Добро пожаловать! Выберите действие:"
-        bot.send_message(chat_id, welcome_text, reply_markup=markup)
-    
-    @bot.message_handler(func=lambda message: message.text == '🏪 В меню клиента')
-    def switch_to_customer_menu(message):
-        """Переключение в меню клиента для администратора"""
-        show_customer_menu(message.chat.id)
-    
-    @bot.message_handler(func=lambda message: user_states.get(message.from_user.id) == 'awaiting_name')
+    @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get('state') == 'awaiting_name')
     def handle_name_input(message):
         user_id = message.from_user.id
         chat_id = message.chat.id
         name = message.text.strip()
         username = message.from_user.username
+        
+        # Получаем информацию о состоянии
+        user_state = user_states.get(user_id, {})
+        is_admin = user_state.get('is_admin', False)
         
         if len(name) < 2:
             bot.send_message(chat_id, "Пожалуйста, введите настоящее имя (минимум 2 символа).")
@@ -137,42 +129,83 @@ def register_main_handlers(bot):
             # Убираем состояние ожидания
             user_states.pop(user_id, None)
             
-            bot.send_message(chat_id, f"Приятно познакомиться, {name}! 😊\nТеперь я буду обращаться к вам по имени.")
-            show_customer_menu(chat_id)
+            if is_admin:
+                bot.send_message(
+                    chat_id, 
+                    f"Приятно познакомиться, {name}! 😊\n"
+                    f"Как администратор, вы также имеете доступ к админ панели."
+                )
+            else:
+                bot.send_message(chat_id, f"Приятно познакомиться, {name}! 😊\nТеперь я буду обращаться к вам по имени.")
+            
+            show_customer_menu(chat_id, is_admin)
             
         except Exception as e:
             bot.send_message(chat_id, "Произошла ошибка при сохранении. Попробуйте еще раз.")
             logging.error(f"Ошибка при сохранении клиента: {e}")
     
-    # Обработчики для администратора
-    @bot.message_handler(func=lambda message: message.text == '📊 Статистика')
-    def handle_admin_stats(message):
-        if not is_user_admin(message.from_user.id):
-            bot.send_message(message.chat.id, "⛔ У вас нет прав администратора.")
+    @bot.message_handler(func=lambda message: message.text == '👑 Админ панель')
+    def handle_admin_panel(message):
+        """Обработка входа в админ панель"""
+
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        
+        if not is_user_admin(user_id):
+            bot.send_message(chat_id, "⛔ У вас нет прав администратора.")
             return
         
-        # Здесь будет логика для статистики
-        bot.send_message(message.chat.id, "📊 Статистика в разработке...")
+        # Импортируем и регистрируем админ обработчики
+        try:
+            from src.myconfbot.handlers.admin_handlers import register_admin_handlers
+            # Передаем управление админ обработчикам
+            # Для этого нужно создать временный бот или использовать другой подход
+            # Вместо этого покажем сообщение о переходе
+            bot.send_message(
+                chat_id,
+                "👑 Переход в админ панель...\n"
+                "Используйте команды администрирования:\n"
+                "/admin_stats - Статистика\n"
+                "/admin_orders - Управление заказами\n"
+                "/admin_users - Управление пользователями"
+            )
+            
+        except ImportError as e:
+            bot.send_message(chat_id, "⛔ Админ панель временно недоступна.")
+            logging.error(f"Ошибка импорта admin_handlers: {e}")
+        except Exception as e:
+            bot.send_message(chat_id, "⛔ Ошибка при открытии админ панели.")
+            logging.error(f"Ошибка при открытии админ панели: {e}")
+       
+    @bot.message_handler(commands=['menu'])
+    def show_menu(message):
+        # Показываем меню в зависимости от прав
+        user_id = message.from_user.id
+        is_admin = is_user_admin(user_id)
+        show_customer_menu(message.chat.id, is_admin)
     
-    @bot.message_handler(func=lambda message: message.text == '📦 Заказы')
-    def handle_admin_orders(message):
-        if not is_user_admin(message.from_user.id):
-            bot.send_message(message.chat.id, "⛔ У вас нет прав администратора.")
-            return
+    @bot.message_handler(func=lambda message: message.text == '🐱 Моя информация')
+    def show_my_id(message):
+        user_id = message.from_user.id
+        first_name = message.from_user.first_name
+        username = f"@{message.from_user.username}" if message.from_user.username else "нет"
+        is_admin = is_user_admin(user_id)
         
-        # Здесь будет логика для управления заказами
-        bot.send_message(message.chat.id, "📦 Управление заказами в разработке...")
-    
-    @bot.message_handler(func=lambda message: message.text == '👥 Клиенты')
-    def handle_admin_customers(message):
-        if not is_user_admin(message.from_user.id):
-            bot.send_message(message.chat.id, "⛔ У вас нет прав администратора.")
-            return
+        admin_status = "👑 Администратор" if is_admin else "👤 Клиент"
         
-        # Здесь будет логика для управления клиентами
-        bot.send_message(message.chat.id, "👥 Управление клиентами в разработке...")
+        bot.send_message(
+            message.chat.id,
+            f"👤 Ваша информация:\n"
+            f"🆔 ID: `{user_id}`\n"
+            f"📛 Имя: {first_name}\n"
+            f"📱 Username: {username}\n"
+            f"🎭 Статус: {admin_status}\n\n",
+            # f"Сообщите этот ID администратору для добавления в админы.",
+            parse_mode='Markdown'
+        )
     
-    # Старые обработчики (оставляем как есть)
+    # Старые обработчики (оставляем пока как есть)
+    # нужно переделывать
     @bot.message_handler(commands=['start2'])
     def send_welcome(message):
         user_id = message.from_user.id
@@ -229,22 +262,3 @@ def register_main_handlers(bot):
         """
         bot.send_message(message.chat.id, services_text)
     
-    @bot.message_handler(commands=['menu'])
-    def show_menu(message):
-        bot.reply_to(message, "🎂 Наше меню в разработке...")
-    
-    @bot.message_handler(commands=['myid'])
-    def show_my_id(message):
-        user_id = message.from_user.id
-        first_name = message.from_user.first_name
-        username = f"@{message.from_user.username}" if message.from_user.username else "нет"
-        
-        bot.send_message(
-            message.chat.id,
-            f"👤 Ваша информация:\n"
-            f"🆔 ID: `{user_id}`\n"
-            f"📛 Имя: {first_name}\n"
-            f"📱 Username: {username}\n\n"
-            f"Сообщите этот ID администратору для добавления в админы.",
-            parse_mode='Markdown'
-        )
