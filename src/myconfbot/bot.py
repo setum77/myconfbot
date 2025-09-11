@@ -8,7 +8,7 @@ import telebot
 # from aiogram.enums import ParseMode
 
 from src.myconfbot.config import Config
-from src.myconfbot.utils.database import DatabaseManager
+from src.myconfbot.utils.database import db_manager
 from src.myconfbot.handlers import register_handlers
 
 
@@ -23,6 +23,10 @@ class ConfectioneryBot:
             # Получаем токен
             self.token = Config.get_bot_token()
             self.logger.info("✓ Токен бота успешно получен")
+            
+            # Инициализируем базу данных
+            self.db = db_manager
+            self.logger.info("✓ База данных инициализирована")
             
             # Создаем экземпляр бота
             self.bot = telebot.TeleBot(
