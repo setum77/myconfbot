@@ -94,3 +94,12 @@ myconfbot
 uv run python -m src.myconfbot.init_db
 ```
 - Добавил админ панель, команда `/admin` в телеграм-боте. Пока только без взаимодействия с DB
+
+11.09.25
+- Приветственный текст и контактная информация подгружаются из файлов `data/welcome.md` и  `data/contacts.md`. Это Markdown файлы
+- Их создать и за дальнейшее редактирование отвечает файл src\myconfbot\utils\content_manager.py
+Для создания файлов, запустить код:
+```shell
+uv run python -m src.myconfbot.utils.content_manager
+```
+- Последующее редактирование доступно из админ панели

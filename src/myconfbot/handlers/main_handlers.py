@@ -1,52 +1,51 @@
 from telebot import types
-import sqlite3
 from datetime import datetime
 import logging
-from src.myconfbot.models import Customer, OrderStatus, CustomerCharacteristic, Admin
+from src.myconfbot.models import Customer, Admin, CustomerCharacteristic
 from src.myconfbot.utils.database import db_manager
 from src.myconfbot.config import Config
+from src.myconfbot.utils.content_manager import content_manager
 
 def register_main_handlers(bot):
-
     # Словарь для хранения состояния пользователей
     user_states = {}
     
     def is_user_admin(telegram_id):
         """Проверка, является ли пользователь администратором"""
         try:
-            # Сначала проверяем конфигурацию
             config = Config.load()
-            if telegram_id in config.admin_ids:
-                # Проверяем, есть ли уже в базе
-                admin = db_manager.get_admin_by_telegram_id(telegram_id)
-                if not admin:
-                    # Если нет в базе, но есть в конфиге - добавляем
-                    return None  # Вернем None чтобы обработать в основном обработчике
-                return True
-            return False
+            return telegram_id in config.admin_ids
         except Exception as e:
             logging.error(f"Ошибка при проверке администратора: {e}")
             return False
     
-    def show_customer_menu(chat_id, is_admin=False):
-        """Показывает меню клиента с возможностью админ панели"""
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        btn1 = types.KeyboardButton('💼 Услуги')
-        btn2 = types.KeyboardButton('🎂 Сделать заказ')
-        btn3 = types.KeyboardButton('📖 Рецепты')
-        btn4 = types.KeyboardButton('📞 Контакты')
-        btn5 = types.KeyboardButton('🐱 Моя информация')
+    def show_main_menu(chat_id, is_admin=False):
+        """Показывает главное меню с reply-кнопками"""
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
         
+        # Базовые кнопки для всех пользователей
+        buttons = [
+            '🎂 Сделать заказ',
+            '📖 Рецепты', 
+            '💼 Услуги',
+            '📞 Контакты',
+            '🐱 Моя информация'
+        ]
+        
+        # Добавляем кнопки администратора
         if is_admin:
-            btn_admin = types.KeyboardButton('👑 Админ панель')
-            markup.add(btn1, btn2, btn3, btn4, btn5, btn_admin)
-        else:
-            markup.add(btn1, btn2, btn3, btn4, btn5)
+            buttons.extend([
+                '📦 Заказы',
+                '📊 Статистика',
+                '🏪 Управление'
+            ])
         
-        welcome_text = "🎂 Добро пожаловать! Выберите действие:"
+        markup.add(*[types.KeyboardButton(btn) for btn in buttons])
+        
+        welcome_text = "🎂 Главное меню\nВыберите действие:"
         bot.send_message(chat_id, welcome_text, reply_markup=markup)
     
-    @bot.message_handler(commands=['start', 'help'])   
+    @bot.message_handler(commands=['start', 'help'])
     def handle_start(message):
         user_id = message.from_user.id
         chat_id = message.chat.id
@@ -54,50 +53,43 @@ def register_main_handlers(bot):
         username = message.from_user.username
         
         try:
-            # Сначала проверяем, является ли пользователь администратором
-            admin_check = is_user_admin(user_id)
-            is_admin = False
+            is_admin = is_user_admin(user_id)
             
-            if admin_check is None:
-                # Пользователь есть в конфиге, но нет в базе - сохраняем как админа
-                try:
-                    admin = db_manager.add_admin(
-                        telegram_id=user_id,
-                        first_name=first_name,
-                        username=username
-                    )
-                    bot.send_message(
-                        chat_id, 
-                        f"👑 Добро пожаловать, администратор {first_name}!\n"
-                        f"Ваши права подтверждены. Доступ к админ панели открыт."
-                    )
-                    is_admin = True
-                except Exception as e:
-                    logging.error(f"Ошибка при сохранении администратора: {e}")
-                    bot.send_message(chat_id, "Ошибка при активации прав администратора.")
+            # Проверяем, есть ли пользователь в базе
+            customer = db_manager.get_customer_by_telegram_id(user_id)
+            admin = db_manager.get_admin_by_telegram_id(user_id) if is_admin else None
             
-            elif admin_check:
-                # Пользователь уже администратор
-                is_admin = True
+            if customer or admin:
+                # Пользователь уже в базе
+                name = admin.first_name if admin else customer.first_name
+                status = "администратор" if admin else "клиент"
+                
                 bot.send_message(
                     chat_id, 
-                    f"👑 С возвращением, администратор {username}!\n"
-                    f"Доступ к админ панели открыт."
+                    f"С возвращением, {name}! 👋\n"
+                    f"Рады снова видеть вас как {status}!"
                 )
-            
-            # Проверяем как клиента (даже если администратор)
-            customer = db_manager.get_customer_by_telegram_id(user_id)
-            
-            if customer:
-                # Клиент уже есть в базе
-                bot.send_message(chat_id, f"С возвращением, {customer.first_name}! 🎂\nРады снова видеть вас!")
-                show_customer_menu(chat_id, is_admin)
+                show_main_menu(chat_id, is_admin)
             else:
-                # Новый клиент (даже если администратор)
-                bot.send_message(chat_id, "Привет! 👋\nЯ бот кондитерской. Давайте познакомимся!")
+                # Новый пользователь
+                bot.send_message(
+                    chat_id, 
+                    "Привет! 👋\nЯ бот кондитерской. Давайте познакомимся!"
+                )
                 bot.send_message(chat_id, "Как вас зовут?")
-                # Сохраняем информацию о том, что пользователь админ (если он им является)
-                user_states[user_id] = {'state': 'awaiting_name', 'is_admin': is_admin}
+                
+                # Сохраняем состояние
+                user_states[user_id] = {
+                    'state': 'awaiting_name',
+                    'is_admin': is_admin,
+                    'username': username
+                }
+            # Загрузка приветственного текста
+            welcome_text = content_manager.get_content('welcome.md')
+            if not welcome_text:
+                welcome_text = "Добро пожаловать в кондитерскую!"  # fallback
+            
+            bot.send_message(chat_id, welcome_text)
                 
         except Exception as e:
             bot.send_message(chat_id, "Произошла ошибка. Попробуйте позже.")
@@ -108,142 +100,227 @@ def register_main_handlers(bot):
         user_id = message.from_user.id
         chat_id = message.chat.id
         name = message.text.strip()
-        username = message.from_user.username
         
-        # Получаем информацию о состоянии
         user_state = user_states.get(user_id, {})
         is_admin = user_state.get('is_admin', False)
+        username = user_state.get('username')
         
         if len(name) < 2:
             bot.send_message(chat_id, "Пожалуйста, введите настоящее имя (минимум 2 символа).")
             return
         
         try:
-            # Сохраняем клиента в базу
-            db_manager.add_customer(
-                telegram_id=user_id,
-                first_name=name,
-                username=username
-            )
-            
-            # Убираем состояние ожидания
-            user_states.pop(user_id, None)
-            
             if is_admin:
-                bot.send_message(
-                    chat_id, 
-                    f"Приятно познакомиться, {name}! 😊\n"
-                    f"Как администратор, вы также имеете доступ к админ панели."
+                # Для администратора запрашиваем дополнительные данные
+                db_manager.add_admin(
+                    telegram_id=user_id,
+                    first_name=name,
+                    username=username
                 )
+                user_states[user_id]['state'] = 'awaiting_phone'
+                user_states[user_id]['name'] = name
+                bot.send_message(chat_id, "Отлично! Теперь укажите ваш телефонный номер:")
             else:
-                bot.send_message(chat_id, f"Приятно познакомиться, {name}! 😊\nТеперь я буду обращаться к вам по имени.")
-            
-            show_customer_menu(chat_id, is_admin)
-            
+                # Для клиента просто сохраняем
+                db_manager.add_customer(
+                    telegram_id=user_id,
+                    first_name=name,
+                    username=username
+                )
+                user_states.pop(user_id, None)
+                bot.send_message(chat_id, f"Приятно познакомиться, {name}! 😊")
+                show_main_menu(chat_id, False)
+                
         except Exception as e:
             bot.send_message(chat_id, "Произошла ошибка при сохранении. Попробуйте еще раз.")
-            logging.error(f"Ошибка при сохранении клиента: {e}")
+            logging.error(f"Ошибка при сохранении: {e}")
     
-    @bot.message_handler(func=lambda message: message.text == '👑 Админ панель')
-    def handle_admin_panel(message):
-        """Обработка входа в админ панель"""
-
+    @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get('state') == 'awaiting_phone')
+    def handle_phone_input(message):
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        phone = message.text.strip()
+        
+        user_state = user_states.get(user_id, {})
+        name = user_state.get('name')
+        
+        # Простая валидация телефона
+        if not any(char.isdigit() for char in phone) or len(phone) < 5:
+            bot.send_message(chat_id, "Пожалуйста, введите корректный телефонный номер.")
+            return
+        
+        try:
+            user_states[user_id]['state'] = 'awaiting_address'
+            user_states[user_id]['phone'] = phone
+            bot.send_message(chat_id, "Отлично! Теперь укажите ваш адрес:")
+                
+        except Exception as e:
+            bot.send_message(chat_id, "Произошла ошибка. Попробуйте еще раз.")
+            logging.error(f"Ошибка при обработке телефона: {e}")
+    
+    @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get('state') == 'awaiting_address')
+    def handle_address_input(message):
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        address = message.text.strip()
+        
+        user_state = user_states.get(user_id, {})
+        name = user_state.get('name')
+        phone = user_state.get('phone')
+        username = user_state.get('username')
+        
+        if len(address) < 5:
+            bot.send_message(chat_id, "Пожалуйста, введите полный адрес.")
+            return
+        
+        try:
+            # Обновляем администратора с полными данными
+            db_manager.update_admin_info(user_id, phone, address)
+            user_states.pop(user_id, None)
+            
+            bot.send_message(
+                chat_id, 
+                f"Отлично, {name}! 👑\n"
+                f"Ваши данные сохранены. Теперь вы можете управлять кондитерской!"
+            )
+            show_main_menu(chat_id, True)
+                
+        except Exception as e:
+            bot.send_message(chat_id, "Произошла ошибка при сохранении. Попробуйте еще раз.")
+            logging.error(f"Ошибка при сохранении адреса: {e}")
+    
+    @bot.message_handler(commands=['menu'])
+    def show_menu(message):
+        """Показывает главное меню"""
+        user_id = message.from_user.id
+        is_admin = is_user_admin(user_id)
+        show_main_menu(message.chat.id, is_admin)
+    
+    @bot.message_handler(func=lambda message: message.text == '🐱 Моя информация')
+    def show_my_info(message):
+        user_id = message.from_user.id
+        chat_id = message.chat.id
+        
+        is_admin = is_user_admin(user_id)
+        user_info = None
+        
+        try:
+            if is_admin:
+                user_info = db_manager.get_admin_by_telegram_id(user_id)
+            else:
+                user_info = db_manager.get_customer_by_telegram_id(user_id)
+            
+            if user_info:
+                response = f"👤 Ваша информация:\n"
+                response += f"📛 Имя: {user_info.first_name}\n"
+                if user_info.username:
+                    response += f"📱 Username: @{user_info.username}\n"
+                if is_admin and user_info.phone:
+                    response += f"📞 Телефон: {user_info.phone}\n"
+                if is_admin and user_info.address:
+                    response += f"📍 Адрес: {user_info.address}\n"
+                response += f"🎭 Статус: {'👑 Администратор' if is_admin else '👤 Клиент'}\n"
+                
+                bot.send_message(chat_id, response)
+            else:
+                bot.send_message(chat_id, "❌ Информация не найдена. Попробуйте /start")
+                
+        except Exception as e:
+            bot.send_message(chat_id, "❌ Ошибка при получении информации.")
+            logging.error(f"Ошибка при получении информации пользователя: {e}")
+    
+    # Обработчики для администраторских кнопок
+    @bot.message_handler(func=lambda message: message.text in ['📦 Заказы', '📊 Статистика', '🏪 Управление'])
+    def handle_admin_buttons(message):
         user_id = message.from_user.id
         chat_id = message.chat.id
         
         if not is_user_admin(user_id):
-            bot.send_message(chat_id, "⛔ У вас нет прав администратора.")
+            bot.send_message(chat_id, "❌ У вас нет прав администратора.")
             return
         
-        # Импортируем и регистрируем админ обработчики
-        try:
-            from src.myconfbot.handlers.admin_handlers import register_admin_handlers
-            # Передаем управление админ обработчикам
-            # Для этого нужно создать временный бот или использовать другой подход
-            # Вместо этого покажем сообщение о переходе
-            bot.send_message(
-                chat_id,
-                "👑 Переход в админ панель...\n"
-                "Используйте команды администрирования:\n"
-                "/admin_stats - Статистика\n"
-                "/admin_orders - Управление заказами\n"
-                "/admin_users - Управление пользователями"
-            )
-            
-        except ImportError as e:
-            bot.send_message(chat_id, "⛔ Админ панель временно недоступна.")
-            logging.error(f"Ошибка импорта admin_handlers: {e}")
-        except Exception as e:
-            bot.send_message(chat_id, "⛔ Ошибка при открытии админ панели.")
-            logging.error(f"Ошибка при открытии админ панели: {e}")
-       
-    @bot.message_handler(commands=['menu'])
-    def show_menu(message):
-        # Показываем меню в зависимости от прав
-        user_id = message.from_user.id
-        is_admin = is_user_admin(user_id)
-        show_customer_menu(message.chat.id, is_admin)
+        # Используем inline-кнопки для административных функций
+        if message.text == '📦 Заказы':
+            show_orders_management(message)
+        elif message.text == '📊 Статистика':
+            show_statistics(message)
+        elif message.text == '🏪 Управление':
+            show_management_panel(message)
     
-    @bot.message_handler(func=lambda message: message.text == '🐱 Моя информация')
-    def show_my_id(message):
-        user_id = message.from_user.id
-        first_name = message.from_user.first_name
-        username = f"@{message.from_user.username}" if message.from_user.username else "нет"
-        is_admin = is_user_admin(user_id)
-        
-        admin_status = "👑 Администратор" if is_admin else "👤 Клиент"
+    def show_orders_management(message):
+        """Показывает управление заказами через inline-кнопки"""
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(
+            types.InlineKeyboardButton("📋 Активные заказы", callback_data="admin_orders_active"),
+            types.InlineKeyboardButton("📊 Все заказы", callback_data="admin_orders_all")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("🔄 Изменить статус", callback_data="admin_orders_change_status"),
+            types.InlineKeyboardButton("📈 Статистика заказов", callback_data="admin_orders_stats")
+        )
         
         bot.send_message(
             message.chat.id,
-            f"👤 Ваша информация:\n"
-            f"🆔 ID: `{user_id}`\n"
-            f"📛 Имя: {first_name}\n"
-            f"📱 Username: {username}\n"
-            f"🎭 Статус: {admin_status}\n\n",
-            # f"Сообщите этот ID администратору для добавления в админы.",
-            parse_mode='Markdown'
+            "📦 Управление заказами\nВыберите действие:",
+            reply_markup=keyboard
         )
     
-    # Старые обработчики (оставляем пока как есть)
-    # нужно переделывать
-    @bot.message_handler(commands=['start2'])
-    def send_welcome(message):
-        user_id = message.from_user.id
-        chat_id = message.chat.id
+    def show_statistics(message):
+        """Показывает статистику через inline-кнопки"""
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(
+            types.InlineKeyboardButton("📊 Общая статистика", callback_data="admin_stats_general"),
+            types.InlineKeyboardButton("💰 Финансовая", callback_data="admin_stats_financial")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("👥 Клиентская", callback_data="admin_stats_clients"),
+            types.InlineKeyboardButton("🎂 Товарная", callback_data="admin_stats_products")
+        )
         
-        
-        
-        welcome_text = """
-        🎂 Добро пожаловать в кондитерскую мастерскую!
-
-        Я помогу вам:
-        • 📋 Сделать заказ тортов и десертов
-        • 📖 Посмотреть рецепты
-        • 💼 Узнать о наших услугах
-        • 📞 Связаться с мастером
-
-        Выберите действие из меню ниже 👇
-        """
-        
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        btn1 = types.KeyboardButton('🎂 Сделать заказ')
-        btn2 = types.KeyboardButton('📖 Рецепты')
-        btn3 = types.KeyboardButton('💼 Услуги')
-        btn4 = types.KeyboardButton('📞 Контакты')
-        markup.add(btn1, btn2, btn3, btn4)
-        
-        bot.send_message(message.chat.id, welcome_text, reply_markup=markup)
+        bot.send_message(
+            message.chat.id,
+            "📊 Статистика\nВыберите раздел:",
+            reply_markup=keyboard
+        )
     
+    def show_management_panel(message):
+        """Показывает панель управления через inline-кнопки"""
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(
+            types.InlineKeyboardButton("🎂 Продукция", callback_data="admin_manage_products"),
+            types.InlineKeyboardButton("📖 Рецепты", callback_data="admin_manage_recipes")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("💼 Услуги", callback_data="admin_manage_services"),
+            types.InlineKeyboardButton("📞 Контакты", callback_data="admin_manage_contacts")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("📄 Контент", callback_data="admin_manage_content"),
+            types.InlineKeyboardButton("👥 Администраторы", callback_data="admin_manage_admins")
+        )
+        
+        bot.send_message(
+            message.chat.id,
+            "🏪 Панель управления\nВыберите раздел:",
+            reply_markup=keyboard
+        )
+    
+    # Базовые обработчики для клиентов
     @bot.message_handler(func=lambda message: message.text == '📞 Контакты')
     def send_contacts(message):
-        contacts_text = """
-        📍 Наш адрес: ул. Кондитерская, 15
-        📞 Телефон: +7 (999) 123-45-67
-        🕒 Время работы: 9:00 - 21:00
-        📧 Email: master@myconfbot.ru
+        # contacts_text = """
+        # 📍 Наш адрес: ул. Кондитерская, 15
+        # 📞 Телефон: +7 (999) 123-45-67
+        # 🕒 Время работы: 9:00 - 21:00
+        # 📧 Email: master@myconfbot.ru
         
-        Мы всегда рады вашим вопросам и заказам! 🎂
-        """
+        # Мы всегда рады вашим вопросам и заказам! 🎂
+        # """
+        # bot.send_message(message.chat.id, contacts_text)
+        contacts_text = content_manager.get_content('contacts.md')
+        if not contacts_text:
+            contacts_text = "Контактная информация временно недоступна."
+    
         bot.send_message(message.chat.id, contacts_text)
     
     @bot.message_handler(func=lambda message: message.text == '💼 Услуги')
@@ -258,7 +335,24 @@ def register_main_handlers(bot):
         • 🎉 Десерты для мероприятий
         • 👨‍🍳 Мастер-классы по кондитерскому искусству
 
-        Для заказа выберите "🎂 Сделать заказ"
+        Для забора выберите "🎂 Сделать заказ"
         """
         bot.send_message(message.chat.id, services_text)
     
+    @bot.message_handler(func=lambda message: message.text == '📖 Рецепты')
+    def show_recipes(message):
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(
+            types.InlineKeyboardButton("🍰 Торты", callback_data="recipes_cakes"),
+            types.InlineKeyboardButton("🧁 Капкейки", callback_data="recipes_cupcakes")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("🍪 Печенье", callback_data="recipes_cookies"),
+            types.InlineKeyboardButton("🎂 Сезонные", callback_data="recipes_seasonal")
+        )
+        
+        bot.send_message(
+            message.chat.id,
+            "📖 Наши рецепты\nВыберите категорию:",
+            reply_markup=keyboard
+        )

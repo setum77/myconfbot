@@ -114,6 +114,51 @@ class DatabaseManager:
     def is_admin(self, telegram_id):
         """Проверка, является ли пользователь администратором"""
         return self.get_admin_by_telegram_id(telegram_id) is not None
+    
+    def update_admin_info(self, telegram_id, phone, address):
+        """Обновление информации администратора"""
+        session = self.get_session()
+        try:
+            from src.myconfbot.models import Admin
+            admin = session.query(Admin).filter_by(telegram_id=telegram_id).first()
+            if admin:
+                admin.phone = phone
+                admin.address = address
+                session.commit()
+                return True
+            return False
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            self.close_session()
+
+    def get_orders_by_status(self, status_list):
+        """Получение заказов по статусу"""
+        session = self.get_session()
+        try:
+            from src.myconfbot.models import Order
+            return session.query(Order).filter(Order.status.in_(status_list)).all()
+        finally:
+            self.close_session()
+
+    def get_orders_statistics(self):
+        """Получение статистики заказов"""
+        session = self.get_session()
+        try:
+            from src.myconfbot.models import Order
+            from sqlalchemy import func
+            
+            stats = {
+                'total': session.query(Order).count(),
+                'completed': session.query(Order).filter_by(status=OrderStatus.COMPLETED).count(),
+                'in_progress': session.query(Order).filter_by(status=OrderStatus.IN_PROGRESS).count(),
+                'new': session.query(Order).filter_by(status=OrderStatus.NEW).count(),
+                'total_amount': session.query(func.sum(Order.total_amount)).scalar() or 0
+            }
+            return stats
+        finally:
+            self.close_session()
 
 # Глобальный экземпляр менеджера БД
 db_manager = DatabaseManager()
