@@ -87,9 +87,9 @@ def register_main_handlers(bot):
             # Загрузка приветственного текста
             welcome_text = content_manager.get_content('welcome.md')
             if not welcome_text:
-                welcome_text = "Добро пожаловать в кондитерскую!"  # fallback
+                welcome_text = "Добро пожаловать! Я бот-помощник мастера кондитера\!"  # fallback
             
-            bot.send_message(chat_id, welcome_text)
+            bot.send_message(chat_id, welcome_text, parse_mode='MarkdownV2')
                 
         except Exception as e:
             bot.send_message(chat_id, "Произошла ошибка. Попробуйте позже.")
@@ -319,25 +319,18 @@ def register_main_handlers(bot):
         # bot.send_message(message.chat.id, contacts_text)
         contacts_text = content_manager.get_content('contacts.md')
         if not contacts_text:
-            contacts_text = "Контактная информация временно недоступна."
+            contacts_text = "Контактная информация временно недоступна"
     
-        bot.send_message(message.chat.id, contacts_text)
+        bot.send_message(message.chat.id, contacts_text, parse_mode='MarkdownV2')
     
     @bot.message_handler(func=lambda message: message.text == '💼 Услуги')
     def send_services(message):
-        services_text = """
-        🎁 Наши услуги:
+        # Загрузка текста описывающего услуги
+        services_text = content_manager.get_content('services.md')
+        if not services_text:
+            services_text = "🎁 Наши услуги скоро будут добавлены"
 
-        • 🎂 Торты на заказ
-        • 🧁 Капкейки и маффины
-        • 🍪 Пряничные домики
-        • 🍫 Шоколадные конфеты ручной работы
-        • 🎉 Десерты для мероприятий
-        • 👨‍🍳 Мастер-классы по кондитерскому искусству
-
-        Для забора выберите "🎂 Сделать заказ"
-        """
-        bot.send_message(message.chat.id, services_text)
+        bot.send_message(message.chat.id, services_text, parse_mode='MarkdownV2')
     
     @bot.message_handler(func=lambda message: message.text == '📖 Рецепты')
     def show_recipes(message):

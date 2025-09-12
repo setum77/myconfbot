@@ -1,4 +1,5 @@
 import telebot
+import logging
 from telebot.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from src.myconfbot.config import Config
 from src.myconfbot.utils.database import db_manager
@@ -9,7 +10,8 @@ def register_admin_handlers(bot):
     """Регистрация обработчиков для администратора"""
     
     config = Config.load()
-    
+    user_states = {}  # Словарь для состояний при редактировании контента
+     
     def is_admin(user_id):
         """Проверка, является ли пользователь администратором"""
         return user_id in config.admin_ids
@@ -186,72 +188,156 @@ def register_admin_handlers(bot):
     
     # Управление контентом (приветственный текст, контакты и т.д.)
     def manage_content(message):
-        """Управление контентом"""
+        """Визуальный редактор контента для админов"""
         keyboard = InlineKeyboardMarkup()
         
         files = content_manager.get_file_list()
         for filename in files:
             keyboard.add(InlineKeyboardButton(
-                f"📝 {filename}", 
-                callback_data=f"edit_content_{filename}"
+                f"✏️ {filename}", 
+                callback_data=f"content_edit_{filename}"
             ))
         
+        help_text = """
+    🎨 **Редактор текста**
+
+    Просто выберите файл для редактирования и напишите текст как в обычном сообщении\\.
+
+    **Доступные оформления:**
+✅ **Жирный** \\- оберните текст звёздочками \\*\\***жирный текст**\\*\\*
+✅ _Курсив_ \\- оберните текст в \\__курсивный текст_\\_
+✅ `Код` \\- оберните текст в \\`\\. Пример `\\`user_states = {}\\``
+✅ ✦ Списки проще начинать с эмодзи\\. Например \\- ▫️, или ✦
+✅ Эмодзи 🎂 📞 💼 \\- вставляйте как есть\\. Искать подходящие, например [тут](https://getemoji.com/)\\. Находим подходящий, щелкаем по нему, он скопируется в буфер обмена\\. В нужно месте вставляем `Ctrl + V` 
+
+Важно: если ваш текст содержит символы `_ * [ ] ( ) ~ ` \\` ` > # + - = | { } . ! `, то эти символы нужно экранировать обратным слэшем \\\ \\.
+
+Например, чтобы написать `5 * 5 = 25`, нужно ввести 5 \\\\\* 5 \\\\\= 25\\.   
+
+
+    """
+
         bot.send_message(
             message.chat.id,
-            "📄 Управление контентом\nВыберите файл для редактирования:",
+            help_text,
+            parse_mode='MarkdownV2',
             reply_markup=keyboard
         )
     
-    @bot.callback_query_handler(func=lambda call: call.data.startswith('edit_content_'))
+    
+    # def manage_content(message):
+    #     """Управление контентом"""
+    #     keyboard = InlineKeyboardMarkup()
+        
+    #     files = content_manager.get_file_list()
+    #     for filename in files:
+    #         keyboard.add(InlineKeyboardButton(
+    #             f"📝 {filename}", 
+    #             callback_data=f"content_edit_{filename}"
+    #         ))
+    #         # Добавляем кнопку предпросмотра
+    #         keyboard.add(InlineKeyboardButton(
+    #             f"👀 Предпросмотр {filename}", 
+    #             callback_data=f"content_preview_{filename}"
+    #         ))
+    #     bot.send_message(
+    #         message.chat.id,
+    #         "📄 Управление контентом\nВыберите файл для редактирования:",
+    #         reply_markup=keyboard
+    #     )
+    
+    # Обработчик для редактирования контента
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('content_edit_'))
     def edit_content_callback(callback: CallbackQuery):
         if not is_admin(callback.from_user.id):
             return bot.answer_callback_query(callback.id, "❌ Нет прав")
         
-        filename = callback.data.replace('edit_content_', '')
-        current_content = content_manager.get_content(filename)
+        try:
+            filename = callback.data.replace('content_edit_', '')
+            current_content = content_manager.get_content(filename)
+            
+            if current_content is None:
+                return bot.answer_callback_query(callback.id, "❌ Файл не найден")
+            
+            # Сохраняем состояние редактирования
+            user_states[callback.from_user.id] = {
+                'state': 'editing_content',
+                'filename': filename,
+                'chat_id': callback.message.chat.id,
+                'message_id': callback.message.message_id
+            }
+            
+            # Редактируем сообщение с текущим содержимым
+            bot.edit_message_text(
+                f"📝 Редактирование {filename}\n\n"
+                f"Текущее содержимое:\n\n"
+                f"{current_content}\n\n"
+                f"Отправьте новый текст:",
+                callback.message.chat.id,
+                callback.message.message_id
+            )
+
+            bot.answer_callback_query(callback.id)
+        except Exception as e:
+            logging.error(f"Ошибка в edit_content_callback: {e}")
+            bot.answer_callback_query(callback.id, "❌ Ошибка при открытии редактора")
+    
+    # Обработчик для предпросмотра контента
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('content_preview_'))
+    def preview_content_callback(callback: CallbackQuery):
+        if not is_admin(callback.from_user.id):
+            return bot.answer_callback_query(callback.id, "❌ Нет прав")
         
-        # Сохраняем состояние редактирования
-        user_states[callback.from_user.id] = {
-            'state': 'editing_content',
-            'filename': filename,
-            'message_id': callback.message.message_id
-        }
-        
-        bot.edit_message_text(
-            f"📝 Редактирование {filename}\n\nТекущее содержимое:\n\n{current_content}\n\nОтправьте новый текст:",
-            callback.message.chat.id,
-            callback.message.message_id
-        )
+        try:
+            filename = callback.data.replace('content_preview_', '')
+            content = content_manager.get_content(filename)
+            
+            if content is None:
+                return bot.answer_callback_query(callback.id, "❌ Файл не найден")
+            
+            # Отправляем предпросмотр новым сообщением
+            preview_text = f"👀 Предпросмотр {filename}:\n\n{content}"
+            
+            # Обрезаем если слишком длинное (ограничение Telegram)
+            if len(preview_text) > 4000:
+                preview_text = preview_text[:4000] + "..."
+            
+            bot.send_message(callback.message.chat.id, preview_text)
+            bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logging.error(f"Ошибка в preview_content_callback: {e}")
+            bot.answer_callback_query(callback.id, "❌ Ошибка при предпросмотре")
     
     # Обработчик для приема нового контента
     @bot.message_handler(func=lambda message: user_states.get(message.from_user.id, {}).get('state') == 'editing_content')
-    def handle_content_edit(message):
+    def handle_content_edit(message: Message):
         user_id = message.from_user.id
         user_state = user_states.get(user_id, {})
         filename = user_state.get('filename')
+        chat_id = user_state.get('chat_id')
+        message_id = user_state.get('message_id')
         
-        if filename and content_manager.update_content(filename, message.text):
-            bot.send_message(message.chat.id, f"✅ Файл {filename} успешно обновлен!")
-            
-            # Удаляем состояние редактирования
-            user_states.pop(user_id, None)
-            
-            # Возвращаемся к управлению контентом
-            manage_content(message)
-        else:
+        if not filename:
+            bot.send_message(message.chat.id, "❌ Ошибка: не найден файл для редактирования")
+            return
+        
+        try:
+            if content_manager.update_content(filename, message.text):
+                # Удаляем состояние редактирования
+                user_states.pop(user_id, None)
+                
+                # Отправляем подтверждение
+                bot.send_message(message.chat.id, f"✅ Файл `{filename}` успешно обновлен!", parse_mode='Markdown')
+                
+                # Возвращаемся к управлению контентом
+                manage_content(message)
+            else:
+                bot.send_message(message.chat.id, "❌ Ошибка при сохранении файла")
+                
+        except Exception as e:
+            logging.error(f"Ошибка при сохранении контента: {e}")
             bot.send_message(message.chat.id, "❌ Ошибка при сохранении файла")
-    
-    # Можно добавить предпросмотр
-    @bot.callback_query_handler(func=lambda call: call.data.startswith('preview_content_'))
-    def preview_content(callback: CallbackQuery):
-        filename = callback.data.replace('preview_content_', '')
-        content = content_manager.get_content(filename)
-        
-        bot.send_message(
-            callback.message.chat.id,
-            f"👀 Предпросмотр {filename}:\n\n{content}",
-            parse_mode='Markdown'  # Если поддерживается
-        )
 
 def notify_admins_new_order(bot, order):
     """Уведомление админов о новом заказе"""

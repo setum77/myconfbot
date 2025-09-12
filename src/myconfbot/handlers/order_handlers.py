@@ -1,3 +1,4 @@
+import logging
 from telebot import types
 from src.myconfbot.utils.database import db_manager
 from src.myconfbot.models import Order, OrderStatus, OrderItem
