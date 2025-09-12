@@ -193,10 +193,10 @@ def register_admin_handlers(bot):
         
         files = content_manager.get_file_list()
         for filename in files:
-            keyboard.add(InlineKeyboardButton(
-                f"✏️ {filename}", 
-                callback_data=f"content_edit_{filename}"
-            ))
+            keyboard.add(
+                InlineKeyboardButton(f"✏️ {filename}", callback_data=f"content_edit_{filename}"),
+                InlineKeyboardButton(f"👀 {filename}", callback_data=f"content_preview_{filename}")
+            )
         
         help_text = """
     🎨 **Редактор текста**
@@ -223,29 +223,7 @@ def register_admin_handlers(bot):
             parse_mode='MarkdownV2',
             reply_markup=keyboard
         )
-    
-    
-    # def manage_content(message):
-    #     """Управление контентом"""
-    #     keyboard = InlineKeyboardMarkup()
-        
-    #     files = content_manager.get_file_list()
-    #     for filename in files:
-    #         keyboard.add(InlineKeyboardButton(
-    #             f"📝 {filename}", 
-    #             callback_data=f"content_edit_{filename}"
-    #         ))
-    #         # Добавляем кнопку предпросмотра
-    #         keyboard.add(InlineKeyboardButton(
-    #             f"👀 Предпросмотр {filename}", 
-    #             callback_data=f"content_preview_{filename}"
-    #         ))
-    #     bot.send_message(
-    #         message.chat.id,
-    #         "📄 Управление контентом\nВыберите файл для редактирования:",
-    #         reply_markup=keyboard
-    #     )
-    
+       
     # Обработчик для редактирования контента
     @bot.callback_query_handler(func=lambda call: call.data.startswith('content_edit_'))
     def edit_content_callback(callback: CallbackQuery):
@@ -259,28 +237,89 @@ def register_admin_handlers(bot):
             if current_content is None:
                 return bot.answer_callback_query(callback.id, "❌ Файл не найден")
             
-            # Сохраняем состояние редактирования
+            # Создаем клавиатуру с кнопками
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(
+                InlineKeyboardButton("❌ Отменить редактирование", callback_data=f"cancel_edit_{filename}"),
+                InlineKeyboardButton("💾 Сохранить без изменений", callback_data=f"keep_original_{filename}")
+            )
+            
+            # Сохраняем состояние и оригинальный текст
             user_states[callback.from_user.id] = {
                 'state': 'editing_content',
                 'filename': filename,
+                'original_content': current_content,  # Сохраняем оригинальный текст
                 'chat_id': callback.message.chat.id,
                 'message_id': callback.message.message_id
             }
+            
+            # # Сохраняем состояние редактирования
+            # user_states[callback.from_user.id] = {
+            #     'state': 'editing_content',
+            #     'filename': filename,
+            #     'chat_id': callback.message.chat.id,
+            #     'message_id': callback.message.message_id
+            # }
             
             # Редактируем сообщение с текущим содержимым
             bot.edit_message_text(
                 f"📝 Редактирование {filename}\n\n"
                 f"Текущее содержимое:\n\n"
                 f"{current_content}\n\n"
-                f"Отправьте новый текст:",
+                f"Отправьте новый текст или выберите действие:",
                 callback.message.chat.id,
-                callback.message.message_id
+                callback.message.message_id,
+                reply_markup=keyboard
             )
-
+            
             bot.answer_callback_query(callback.id)
         except Exception as e:
             logging.error(f"Ошибка в edit_content_callback: {e}")
             bot.answer_callback_query(callback.id, "❌ Ошибка при открытии редактора")
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('keep_original_'))
+    def keep_original_callback(callback: CallbackQuery):
+        if not is_admin(callback.from_user.id):
+            return bot.answer_callback_query(callback.id, "❌ Нет прав")
+        
+        try:
+            filename = callback.data.replace('keep_original_', '')
+            user_id = callback.from_user.id
+            
+            # Получаем оригинальный текст из состояния
+            user_state = user_states.get(user_id, {})
+            original_content = user_state.get('original_content')
+            
+            if original_content:
+                # "Сохраняем" оригинальный текст (фактически ничего не меняем)
+                user_states.pop(user_id, None)
+                
+                bot.edit_message_text(
+                    f"✅ Файл '{filename}' сохранен без изменений.",
+                    callback.message.chat.id,
+                    callback.message.message_id
+                )
+                bot.answer_callback_query(callback.id, "✅ Сохранено без изменений")
+            else:
+                bot.answer_callback_query(callback.id, "❌ Ошибка: не найден оригинальный текст")
+                
+        except Exception as e:
+            logging.error(f"Ошибка в keep_original_callback: {e}")
+            bot.answer_callback_query(callback.id, "❌ Ошибка при сохранении")
+    
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('cancel_edit_'))
+    def cancel_editing_callback(callback: CallbackQuery):
+        user_id = callback.from_user.id
+        filename = callback.data.replace('cancel_edit_', '')
+        
+        user_states.pop(user_id, None)
+        
+        bot.edit_message_text(
+            f"❌ Редактирование файла '{filename}' отменено.",
+            callback.message.chat.id,
+            callback.message.message_id
+        )
+        bot.answer_callback_query(callback.id, "❌ Редактирование отменено")
     
     # Обработчик для предпросмотра контента
     @bot.callback_query_handler(func=lambda call: call.data.startswith('content_preview_'))
@@ -295,6 +334,12 @@ def register_admin_handlers(bot):
             if content is None:
                 return bot.answer_callback_query(callback.id, "❌ Файл не найден")
             
+            # Создаем клавиатуру с кнопкой скачивания
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(
+                InlineKeyboardButton("📥 Скачать файл", callback_data=f"download_{filename}")
+            )
+
             # Отправляем предпросмотр новым сообщением
             preview_text = f"👀 Предпросмотр {filename}:\n\n{content}"
             
@@ -302,7 +347,7 @@ def register_admin_handlers(bot):
             if len(preview_text) > 4000:
                 preview_text = preview_text[:4000] + "..."
             
-            bot.send_message(callback.message.chat.id, preview_text)
+            bot.send_message(callback.message.chat.id, preview_text, reply_markup=keyboard)
             bot.answer_callback_query(callback.id)
             
         except Exception as e:
@@ -318,6 +363,18 @@ def register_admin_handlers(bot):
         chat_id = user_state.get('chat_id')
         message_id = user_state.get('message_id')
         
+        # Проверяем команды отмены
+        if message.text.lower() in ['отмена', 'cancel', 'назад', '❌', 'отменить']:
+            user_states.pop(user_id, None)
+            bot.send_message(message.chat.id, "❌ Редактирование отменено.")
+            return
+        
+        # Проверяем команду сохранения без изменений
+        if message.text.lower() in ['без изменений', 'оставить', 'сохранить', '💾']:
+            user_states.pop(user_id, None)
+            bot.send_message(message.chat.id, f"✅ Файл '{filename}' сохранен без изменений.")
+            return
+
         if not filename:
             bot.send_message(message.chat.id, "❌ Ошибка: не найден файл для редактирования")
             return
@@ -338,6 +395,51 @@ def register_admin_handlers(bot):
         except Exception as e:
             logging.error(f"Ошибка при сохранении контента: {e}")
             bot.send_message(message.chat.id, "❌ Ошибка при сохранении файла")
+    
+    # Обработчик для скачивания файла
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('download_'))
+    def download_file_callback(callback: CallbackQuery):
+        if not is_admin(callback.from_user.id):
+            return bot.answer_callback_query(callback.id, "❌ Нет прав")
+        
+        try:
+            filename = callback.data.replace('download_', '')
+            content = content_manager.get_content(filename)
+            
+            if content is None:
+                return bot.answer_callback_query(callback.id, "❌ Файл не найден")
+            
+            # Создаем временный файл для отправки
+            import tempfile
+            import os
+            
+            # Указываем кодировку UTF-8 и правильный режим записи
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False, encoding='utf-8') as temp_file:
+                temp_file.write(content)
+                temp_file_path = temp_file.name
+            
+            # Отправляем файл
+            try:
+                with open(temp_file_path, 'rb') as file:
+                    bot.send_document(
+                        callback.message.chat.id, 
+                        file, 
+                        caption=f"📄 Файл: {filename}"
+                    )
+                bot.answer_callback_query(callback.id, "✅ Файл отправлен")
+            except Exception as e:
+                logging.error(f"Ошибка при отправке файла: {e}")
+                bot.answer_callback_query(callback.id, "❌ Ошибка при отправке")
+            finally:
+                # Удаляем временный файл
+                try:
+                    os.unlink(temp_file_path)
+                except Exception as e:
+                    logging.error(f"Ошибка при удалении временного файла: {e}")
+                
+        except Exception as e:
+            logging.error(f"Ошибка при скачивании файла: {e}")
+            bot.answer_callback_query(callback.id, "❌ Ошибка при скачивании")
 
 def notify_admins_new_order(bot, order):
     """Уведомление админов о новом заказе"""

@@ -21,7 +21,7 @@ def register_main_handlers(bot):
     
     def show_main_menu(chat_id, is_admin=False):
         """Показывает главное меню с reply-кнопками"""
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
         
         # Базовые кнопки для всех пользователей
         buttons = [
@@ -42,8 +42,9 @@ def register_main_handlers(bot):
         
         markup.add(*[types.KeyboardButton(btn) for btn in buttons])
         
-        welcome_text = "🎂 Главное меню\nВыберите действие:"
-        bot.send_message(chat_id, welcome_text, reply_markup=markup)
+        # welcome_text = "🎂 Главное меню\nВыберите действие:" # За не надобностью закоментировал
+        # bot.send_message(chat_id, welcome_text, reply_markup=markup)
+        bot.send_message(chat_id, "🎂 ", reply_markup=markup)
     
     @bot.message_handler(commands=['start', 'help'])
     def handle_start(message):
@@ -67,7 +68,7 @@ def register_main_handlers(bot):
                 bot.send_message(
                     chat_id, 
                     f"С возвращением, {name}! 👋\n"
-                    f"Рады снова видеть вас как {status}!"
+                    f"Рады снова видеть. Ваш статус: {status}!"
                 )
                 show_main_menu(chat_id, is_admin)
             else:
@@ -76,7 +77,7 @@ def register_main_handlers(bot):
                     chat_id, 
                     "Привет! 👋\nЯ бот кондитерской. Давайте познакомимся!"
                 )
-                bot.send_message(chat_id, "Как вас зовут?")
+                bot.send_message(chat_id, "Пожалуйста, наберите ваше имя:")
                 
                 # Сохраняем состояние
                 user_states[user_id] = {
@@ -87,10 +88,22 @@ def register_main_handlers(bot):
             # Загрузка приветственного текста
             welcome_text = content_manager.get_content('welcome.md')
             if not welcome_text:
-                welcome_text = "Добро пожаловать! Я бот-помощник мастера кондитера\!"  # fallback
+                welcome_text = "Добро пожаловать\\! Я бот\\-помощник мастера кондитера\\!"
             
-            bot.send_message(chat_id, welcome_text, parse_mode='MarkdownV2')
-                
+            try:
+                bot.send_message(chat_id, welcome_text, parse_mode='MarkdownV2')
+            except Exception as e:
+                if "400" in str(e) and "parse entities" in str(e):
+                    # Ошибка форматирования - отправляем как plain text
+                    error_msg = "⚠️ Ошибка форматирования текста. Отображаю как обычный текст."
+                    bot.send_message(chat_id, error_msg)
+                    bot.send_message(chat_id, welcome_text)  # plain text
+                    logging.warning(f"Ошибка MarkdownV2 форматирования: {e}")
+                else:
+                    # Другая ошибка
+                    bot.send_message(chat_id, "Произошла ошибка при загрузке приветствия.")
+                    logging.error(f"Ошибка отправки сообщения: {e}")
+                            
         except Exception as e:
             bot.send_message(chat_id, "Произошла ошибка. Попробуйте позже.")
             logging.error(f"Ошибка при обработке /start: {e}")
@@ -319,18 +332,42 @@ def register_main_handlers(bot):
         # bot.send_message(message.chat.id, contacts_text)
         contacts_text = content_manager.get_content('contacts.md')
         if not contacts_text:
-            contacts_text = "Контактная информация временно недоступна"
-    
-        bot.send_message(message.chat.id, contacts_text, parse_mode='MarkdownV2')
+            contacts_text = "Контактная информация пока не добавлена"
+                
+        try:
+            bot.send_message(message.chat.id, contacts_text, parse_mode='MarkdownV2')
+        except Exception as e:
+            if "400" in str(e) and "parse entities" in str(e):
+                # Ошибка форматирования - отправляем как plain text
+                error_msg = "⚠️ Ошибка форматирования текста. Отображаю как обычный текст."
+                bot.send_message(message.chat.id, error_msg)
+                bot.send_message(message.chat.id, contacts_text)  # plain text
+                logging.warning(f"Ошибка MarkdownV2 форматирования: {e}")
+            else:
+                # Другая ошибка
+                bot.send_message(message.chat.id, "Произошла ошибка при загрузке приветствия.")
+                logging.error(f"Ошибка отправки сообщения: {e}")
     
     @bot.message_handler(func=lambda message: message.text == '💼 Услуги')
     def send_services(message):
         # Загрузка текста описывающего услуги
         services_text = content_manager.get_content('services.md')
         if not services_text:
-            services_text = "🎁 Наши услуги скоро будут добавлены"
-
-        bot.send_message(message.chat.id, services_text, parse_mode='MarkdownV2')
+            services_text = "🎁 Информация по услугам пока не добавлена"
+                
+        try:
+            bot.send_message(message.chat.id, services_text, parse_mode='MarkdownV2')
+        except Exception as e:
+            if "400" in str(e) and "parse entities" in str(e):
+                # Ошибка форматирования - отправляем как plain text
+                error_msg = "⚠️ Ошибка форматирования текста. Отображаю как обычный текст."
+                bot.send_message(message.chat.id, error_msg)
+                bot.send_message(message.chat.id, services_text)  # plain text
+                logging.warning(f"Ошибка MarkdownV2 форматирования: {e}")
+            else:
+                # Другая ошибка
+                bot.send_message(message.chat.id, "Произошла ошибка при загрузке приветствия.")
+                logging.error(f"Ошибка отправки сообщения: {e}")
     
     @bot.message_handler(func=lambda message: message.text == '📖 Рецепты')
     def show_recipes(message):
