@@ -61,6 +61,8 @@ myconfbot
 ```
 myconfbot
 ├─ config
+├─ data
+│  └─ confbot.db
 ├─ pyproject.toml
 ├─ README.md
 ├─ src
@@ -127,4 +129,43 @@ uv run python -m src.myconfbot.utils.content_manager
 - Для редактирования нужно пройти по кнопкам `Управление` > `Контент`
     - выбрать нужный файл `✏️ file.md` - редактирование. `👀 file.md` - предпросмотр содержимого  с возможностью скачивания файла
     - !нужно написать подробную инструкцию с описанием работы с MarkdownV2 текстом
-- Файлы `welcome.md`, `services.md`, `contacts.md`, при первом запуске создаются автоматически скриптом `src\myconfbot\utils\content_manager.py` в папке `data`. Если нужно вернуть дефолтное содержание файлов (или файла), достаточно удалить их из папки `data` и перезапустить сервер
+- Файлы `welcome.md`, `services.md`, `contacts.md`, при первом запуске создаются автоматически скриптом `src\myconfbot\utils\content_manager.py` в папке `data`. Если нужно вернуть дефолтное содержание файлов (или файла), достаточно удалить их из папки `data` и перезапустить сервер, скрипт автоматически создаст файлы с дефолтными текстами.
+
+```
+myconfbot
+├─ config
+├─ data
+│  ├─ confbot.db
+│  ├─ contacts.md
+│  ├─ services.md
+│  └─ welcome.md
+├─ pyproject.toml
+├─ README.md
+├─ src
+│  └─ myconfbot
+│     ├─ bot.py
+│     ├─ config.py
+│     ├─ handlers
+│     │  ├─ admin_handlers.py
+│     │  ├─ main_handlers.py
+│     │  ├─ order_handlers.py
+│     │  ├─ recipe_handlers.py
+│     │  └─ __init__.py
+│     ├─ init_db.py
+│     ├─ keyboards
+│     ├─ models
+│     │  └─ __init__.py
+│     ├─ states
+│     ├─ utils
+│     │  ├─ content_manager.py
+│     │  ├─ database.py
+│     │  ├─ text_converter.py
+│     │  └─ __init__.py
+│     ├─ __init__.py
+│     └─ __main__.py
+├─ tests
+└─ uv.lock
+
+```
+## 13.09.25 
+    - После небольших раздумий (и с небольшими трудностями с сессиями в SQLite в проекте scan_vpn) решил изменить БД. Выбор пал PostgreSQL. Это мой первый практический опыт с этой БД.

@@ -8,6 +8,7 @@ dependencies = [
     "env>=0.1.0",
     "httpx>=0.28.1",
     "pillow>=11.3.0",
+    "psycopg2-binary>=2.9.10",
     "pytelegrambotapi>=4.29.1",
     "python-dotenv>=1.1.1",
     "requests>=2.32.5",
