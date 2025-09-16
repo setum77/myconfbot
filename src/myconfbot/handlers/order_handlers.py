@@ -1,10 +1,21 @@
 import logging
 from telebot import types
 from src.myconfbot.utils.database import db_manager
-from src.myconfbot.models import Order, OrderStatus, OrderItem
+#from src.myconfbot.models import Order, OrderStatus, OrderItem
+from src.myconfbot.models import Base, Order, Product, Category, OrderStatus, User
 # from src.myconfbot.handlers.main_handlers import show_customer_menu
 from src.myconfbot.handlers.admin_handlers import notify_admins_new_order
 from src.myconfbot.config import Config
+
+# проверка админа
+def is_user_admin(telegram_id):
+    """Проверка, является ли пользователь администратором"""
+    try:
+        config = Config.load()
+        return telegram_id in config.admin_ids
+    except Exception as e:
+        logging.error(f"Ошибка при проверке администратора: {e}")
+        return False
 
 # В обработчике создания заказа:
 def register_order_handlers(bot):
@@ -76,9 +87,10 @@ def register_order_handlers(bot):
         # Та же логика что и в /menu
         is_admin = is_user_admin(user_id)
         
-        # Используем функцию show_main_menu из main_handlers
-        from .main_handlers import show_main_menu
-        show_main_menu(chat_id, is_admin)
+        # Импортируем внутри функции чтобы избежать циклических импортов
+        from src.myconfbot.handlers.main_handlers import show_main_menu
+        markup = show_main_menu(chat_id, is_admin)
+        bot.send_message(chat_id, "Главное меню", reply_markup=markup)
     
     # После создания заказа в БД:
     # session = db_manager.get_session()

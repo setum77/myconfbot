@@ -1,0 +1,27 @@
+{
+  "migration_id": "20250915_002347",
+  "start_time": "2025-09-15T00:23:47.651839",
+  "end_time": "2025-09-15T00:23:47.770452",
+  "duration_seconds": 0.118624,
+  "migration_stats": {
+    "products": 0,
+    "orders": 0,
+    "recipes": 0,
+    "customers": 0,
+    "admins": 0,
+    "categories": 0,
+    "order_items": 0
+  },
+  "verification_results": {
+    "users": {
+      "error": "no such table: users"
+    },
+    "products": {
+      "error": "tuple indices must be integers or slices, not str"
+    },
+    "orders": {
+      "error": "tuple indices must be integers or slices, not str"
+    }
+  },
+  "success": true
+}

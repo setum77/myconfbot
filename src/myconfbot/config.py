@@ -7,33 +7,44 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class DatabaseConfig:
-    def __init__(self, path: str = None):
-        self.path = path or os.getenv('DATABASE_URL', 'data/confbot.db')
+    def __init__(self):
+        self.use_postgres = os.getenv('USE_POSTGRES', 'false').lower() == 'true'
+        self.host = os.getenv('DB_HOST', 'localhost')
+        self.port = os.getenv('DB_PORT', '5432')
+        self.name = os.getenv('DB_NAME', 'confectioner_bot')
+        self.user = os.getenv('DB_USER', 'postgres')
+        self.password = os.getenv('DB_PASSWORD', '')
+        
+        if self.use_postgres:
+            self.url = f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        else:
+            self.url = os.getenv('DATABASE_URL', 'sqlite:///data/confbot.db')
 
 class Config:
     # Константы
     LOGS_DIR = Path('logs')
     LOG_FILE = LOGS_DIR / 'bot.log'
     
-    def __init__(self):
-        self.bot_token = self.get_bot_token()
-        self.admin_ids = self.get_admin_ids()
+    def __init__(self, bot_token=None, admin_ids=None):
+        self.bot_token = bot_token or self.get_bot_token()
+        self.admin_ids = admin_ids or self.get_admin_ids()
         self.db = DatabaseConfig()
     
     @staticmethod
     def get_bot_token():
         """Получить токен бота из environment variables"""
-        token = os.getenv('TELEGRAM_BOT_TOKEN')
+        token = os.getenv('TELEGRAM_BOT_TOKEN') or os.getenv('BOT_TOKEN')
         if not token:
             # Попробуем прочитать из файла .env вручную
             try:
                 if os.path.exists('.env'):
                     with open('.env', 'r', encoding='utf-8') as f:
                         for line in f:
-                            if line.startswith('TELEGRAM_BOT_TOKEN='):
+                            if line.startswith('TELEGRAM_BOT_TOKEN=') or line.startswith('BOT_TOKEN='):
                                 token = line.split('=', 1)[1].strip()
                                 break
-            except:
+            except Exception as e:
+                logging.error(f"Ошибка чтения .env: {e}")
                 pass
             
             if not token:
@@ -124,24 +135,30 @@ class Config:
                             if line.startswith('ADMIN_IDS='):
                                 admin_ids_str = line.split('=', 1)[1].strip()
                                 break
-            except:
+            except Exception as e:
+                logging.error(f"Ошибка чтения ADMIN_IDS: {e}")
                 pass
         
         if not admin_ids_str:
             return []  # Пустой список вместо ошибки
         
         try:
-            return [int(id_str.strip()) for id_str in admin_ids_str.split(',')]
-        except ValueError:
-            raise ValueError("ADMIN_IDS должны быть числами, разделенными запятыми")
+            return [int(id_str.strip()) for id_str in admin_ids_str.split(',') if id_str.strip()]
+        except ValueError as e:
+            logging.error(f"Ошибка парсинга ADMIN_IDS: {e}")
+            return []
     
     @classmethod
     def load(cls):
-        """Загрузка конфигурации - теперь просто создает экземпляр"""
-        return cls()
+        """Альтернативный метод загрузки конфига"""
+        return cls()  # Просто создаем экземпляр с дефолтными значениями
     
     def print_config(self):
         """Вывод конфигурации для отладки"""
         print(f"Bot token: {self.bot_token[:10]}...")
         print(f"Admin IDs: {self.admin_ids}")
-        print(f"DB path: {self.db.path}")
+        print(f"Use PostgreSQL: {self.db.use_postgres}")
+        if self.db.use_postgres:
+            print(f"DB Host: {self.db.host}")
+            print(f"DB Name: {self.db.name}")
+            print(f"DB User: {self.db.user}")
