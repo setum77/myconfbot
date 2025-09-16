@@ -1,6 +1,7 @@
 import os
 import telebot
 import logging
+from telebot import types
 from telebot.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from src.myconfbot.config import Config
 from src.myconfbot.utils.database import db_manager
@@ -215,7 +216,6 @@ def register_admin_handlers(bot):
             response += f"👑 <b>Статус:</b> {'Администратор' if user.is_admin else 'Клиент'}\n"
             response += f"📛 <b>Полное имя:</b> {user.full_name or 'Не указано'}\n"
             response += f"📞 <b>Телефон:</b> {user.phone or 'Не указан'}\n"
-            #response += f"📧 <b>Email:</b> {user.email or 'Не указан'}\n"
             response += f"🔗 <b>Username:</b> @{user.telegram_username or 'Не указан'}\n"
             response += f"📝 <b>Характеристика:</b> {user.characteristics or 'Не указана'}\n"
             response += f"📅 <b>Дата регистрации:</b> {user.created_at.strftime('%d.%m.%Y %H:%M') if user.created_at else 'Неизвестно'}\n"
@@ -223,7 +223,7 @@ def register_admin_handlers(bot):
             # Создаем клавиатуру с действиями
             keyboard = InlineKeyboardMarkup(row_width=2)
             keyboard.add(
-                InlineKeyboardButton("➕ Добавить характеристику", callback_data=f"user_add_char_{user.telegram_id}"),
+                InlineKeyboardButton("➕ Изменить характеристику", callback_data=f"user_add_char_{user.telegram_id}"),
                 InlineKeyboardButton("📋 Заказы", callback_data=f"user_orders_{user.telegram_id}")
             )
             keyboard.add(InlineKeyboardButton("🔙 Назад к списку", callback_data="admin_manage_users"))
@@ -291,17 +291,41 @@ def register_admin_handlers(bot):
             
             keyboard = InlineKeyboardMarkup()
             keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data=f"user_cancel_char_{telegram_id}"))
+
+            edit_text = (f"📝 Изменение характеристики для пользователя {user.full_name or 'Без имени'}\n\n"
+                    f"Текущая характеристика: {user.characteristics or 'Не указана'}\n\n"
+                    f"Отправьте новую характеристику или нажмите 'Отменить':")
             
-            bot.edit_message_text(
-                f"📝 Добавление характеристики для пользователя {user.full_name or 'Без имени'}\n\n"
-                f"Текущая характеристика: {user.characteristics or 'Не указана'}\n\n"
-                f"Отправьте новую характеристику или нажмите 'Отменить':",
-                callback.message.chat.id,
-                callback.message.message_id,
-                reply_markup=keyboard
-            )
+            # Проверяем тип сообщения (текст или фото с подписью)
+            if callback.message.photo:
+                # Если это фото с подписью, отправляем новое текстовое сообщение
+                bot.edit_message_caption(
+                    caption=edit_text,
+                    chat_id=callback.message.chat.id,
+                    message_id=callback.message.message_id,
+                    reply_markup=keyboard
+                )
+            else:
+                # Если это текстовое сообщение, редактируем его
+                bot.edit_message_text(
+                    edit_text,
+                    callback.message.chat.id,
+                    callback.message.message_id,
+                    reply_markup=keyboard
+                )
             
             bot.answer_callback_query(callback.id)
+            
+            # bot.edit_message_text(
+            #     f"📝 Добавление характеристики для пользователя {user.full_name or 'Без имени'}\n\n"
+            #     f"Текущая характеристика: {user.characteristics or 'Не указана'}\n\n"
+            #     f"Отправьте новую характеристику или нажмите 'Отменить':",
+            #     callback.message.chat.id,
+            #     callback.message.message_id,
+            #     reply_markup=keyboard
+            # )
+            
+            # bot.answer_callback_query(callback.id)
             
         except Exception as e:
             logging.error(f"Ошибка в add_characteristic_start: {e}")
@@ -317,16 +341,16 @@ def register_admin_handlers(bot):
         user_management_states.pop(user_id, None)
         
         # Сначала отвечаем на callback
-        bot.answer_callback_query(callback.id, "❌ Добавление характеристики отменено")
+        bot.answer_callback_query(callback.id, "❌ Изменение характеристики отменено")
         
-        # Удаляем сообщение с редактором характеристики
-        try:
-            bot.delete_message(callback.message.chat.id, callback.message.message_id)
-        except Exception as e:
-            logging.warning(f"Не удалось удалить сообщение: {e}")
+        # # Удаляем сообщение с редактором характеристики
+        # try:
+        #     bot.delete_message(callback.message.chat.id, callback.message.message_id)
+        # except Exception as e:
+        #     logging.warning(f"Не удалось удалить сообщение: {e}")
         
         # Возвращаемся к профилю пользователя через новое сообщение
-        show_user_detail(callback)
+        show_user_detail_from_message(callback.message, telegram_id)
 
     @bot.message_handler(func=lambda message: user_management_states.get(message.from_user.id, {}).get('state') == 'adding_characteristic')
     def handle_characteristic_input(message: Message):
@@ -382,14 +406,13 @@ def register_admin_handlers(bot):
         response += f"👑 <b>Статус:</b> {'Администратор' if user.is_admin else 'Клиент'}\n"
         response += f"📛 <b>Полное имя:</b> {user.full_name or 'Не указано'}\n"
         response += f"📞 <b>Телефон:</b> {user.phone or 'Не указан'}\n"
-        response += f"📧 <b>Email:</b> {user.email or 'Не указан'}\n"
         response += f"🔗 <b>Username:</b> @{user.telegram_username or 'Не указан'}\n"
         response += f"📝 <b>Характеристика:</b> {user.characteristics or 'Не указана'}\n"
         response += f"📅 <b>Дата регистрации:</b> {user.created_at.strftime('%d.%m.%Y %H:%M') if user.created_at else 'Неизвестно'}\n"
         
         keyboard = InlineKeyboardMarkup(row_width=2)
         keyboard.add(
-            InlineKeyboardButton("➕ Добавить характеристику", callback_data=f"user_add_char_{user.telegram_id}"),
+            InlineKeyboardButton("➕ Изменить характеристику", callback_data=f"user_add_char_{user.telegram_id}"),
             InlineKeyboardButton("📋 Заказы", callback_data=f"user_orders_{user.telegram_id}")
         )
         keyboard.add(InlineKeyboardButton("🔙 Назад к списку", callback_data="admin_manage_users"))
@@ -438,16 +461,60 @@ def register_admin_handlers(bot):
         if not is_admin(callback.from_user.id):
             return bot.answer_callback_query(callback.id, "❌ Нет прав администратора")
         
-        # Здесь нужно вызвать функцию, которая показывает главное меню админа
-        # Например, если у вас есть функция show_admin_panel:
-        # show_admin_panel(callback.message)
-        show_management_panel(bot, callback.message)
+        try:
+            # Удаляем текущее сообщение со списком пользователей
+            bot.delete_message(callback.message.chat.id, callback.message.message_id)
+        except Exception as e:
+            logging.warning(f"Не удалось удалить сообщение: {e}")
+    
+        # Создаем новое сообщение для вызова функции
+        fake_message = type('obj', (object,), {
+            'chat': type('obj', (object,), {'id': callback.message.chat.id}),
+            'message_id': callback.message.message_id
+        })
+                
+        # Показываем панель управления
+        show_management_panel(bot, fake_message)
         
         bot.answer_callback_query(callback.id, "🔙 Возврат в главное меню")
 
+        # try:
+        #     # Сначала отвечаем на callback
+        #     bot.answer_callback_query(callback.id, "🔙 Возврат в главное меню")
+            
+        #     # Удаляем текущее сообщение
+        #     bot.delete_message(callback.message.chat.id, callback.message.message_id)
+            
+        #     # Создаем новое сообщение для показа меню управления
+        #     keyboard = InlineKeyboardMarkup(row_width=2)
+        #     keyboard.add(
+        #         InlineKeyboardButton("🎂 Продукция", callback_data="admin_manage_products"),
+        #         InlineKeyboardButton("📖 Рецепты", callback_data="admin_manage_recipes")
+        #     )
+        #     keyboard.add(
+        #         InlineKeyboardButton("💼 Услуги", callback_data="admin_manage_services"),
+        #         InlineKeyboardButton("📞 Контакты", callback_data="admin_manage_contacts")
+        #     )
+        #     keyboard.add(
+        #         InlineKeyboardButton("📄 Контент", callback_data="admin_manage_content"),
+        #         InlineKeyboardButton("👥 Пользователи", callback_data="admin_manage_users")
+        #     )
+            
+        #     # Отправляем новое сообщение с меню управления
+        #     bot.send_message(
+        #         callback.message.chat.id,
+        #         "🏪 Панель управления\nВыберите раздел:",
+        #         reply_markup=keyboard,
+        #         parse_mode='HTML'
+        #     )
+                
+        # except Exception as e:
+        #     logging.error(f"Ошибка при возврате в меню управления: {e}")
+        #     bot.answer_callback_query(callback.id, "❌ Ошибка при возврате")
+
     def show_management_panel(bot, message):
         """Показывает панель управления через inline-кнопки"""
-        keyboard = InlineKeyboardMarkup(row_width=2)
+        keyboard = tapes.InlineKeyboardMarkup(row_width=2)
         keyboard.add(
             InlineKeyboardButton("🎂 Продукция", callback_data="admin_manage_products"),
             InlineKeyboardButton("📖 Рецепты", callback_data="admin_manage_recipes")
