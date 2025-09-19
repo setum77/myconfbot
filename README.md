@@ -216,3 +216,68 @@ myconfbot
 - Сливаю в майн и начинаю перестраивать архитектуру проекта, 
 - так как в хендлерах просто - куча-мала
 
+## 16.09.25 22.51
+
+Временная структура файлов
+
+```
+myconfbot
+├─ config
+├─ pyproject.toml
+├─ README.md
+├─ src
+│  └─ myconfbot
+│     ├─ bot
+│     │  ├─ confectionery_bot.py
+│     │  └─ __init__.py
+│     ├─ config.py
+│     ├─ handlers
+│     │  ├─ admin
+│     │  │  ├─ admin_base.py
+│     │  │  ├─ admin_main.py
+│     │  │  ├─ content_management.py
+│     │  │  ├─ order_management.py
+│     │  │  ├─ product_management.py
+│     │  │  ├─ stats_management.py
+│     │  │  ├─ user_management.py
+│     │  │  └─ __init__.py
+│     │  ├─ base_handler.py
+│     │  ├─ shared
+│     │  │  ├─ states_manager.py
+│     │  │  ├─ utils.py
+│     │  │  └─ __init__.py
+│     │  ├─ user
+│     │  │  ├─ auth_handlers.py
+│     │  │  ├─ base_user_handler.py
+│     │  │  ├─ main_handlers.py
+│     │  │  ├─ order_creation.py
+│     │  │  ├─ order_handlers.py
+│     │  │  ├─ profile_handlers.py
+│     │  │  ├─ recipe_handlers.py
+│     │  │  └─ __init__.py
+│     │  └─ __init__.py
+│     ├─ keyboards
+│     ├─ models
+│     │  ├─ base.py
+│     │  ├─ category.py
+│     │  ├─ order.py
+│     │  ├─ order_status.py
+│     │  ├─ product.py
+│     │  ├─ recipe.py
+│     │  ├─ user.py
+│     │  └─ __init__.py
+│     ├─ services
+│     │  ├─ auth_service.py
+│     │  └─ user_service.py
+│     ├─ states
+│     ├─ utils
+│     │  ├─ content_manager.py
+│     │  ├─ database.py
+│     │  ├─ text_converter.py
+│     │  └─ __init__.py
+│     ├─ __init__.py
+│     └─ __main__.py
+├─ tests
+└─ uv.lock
+
+```

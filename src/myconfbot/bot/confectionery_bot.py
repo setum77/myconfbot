@@ -1,0 +1,69 @@
+import logging
+import os
+from typing import Optional
+
+import telebot
+from dotenv import load_dotenv
+
+from src.myconfbot.config import Config
+from src.myconfbot.utils import db_manager
+from src.myconfbot.handlers import HandlerFactory
+
+# Загрузка переменных окружения
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+class ConfectioneryBot:
+    def __init__(self, token: str, config: Config):
+        self.bot = telebot.TeleBot(token)
+        self.config = config
+        self.handler_factory = HandlerFactory(self.bot, self.config, db_manager)
+        self.setup_handlers()
+        logger.info("Бот инициализирован")
+
+    def setup_handlers(self):
+        """Настройка обработчиков через фабрику"""
+        self.handler_factory.register_all_handlers()
+        logger.info("Все обработчики зарегистрированы")
+
+    def run(self):
+        """Запуск бота"""
+        logger.info("Запуск бота...")
+        self.bot.infinity_polling()
+
+
+def create_bot() -> ConfectioneryBot:
+    """Фабричная функция для создания бота"""
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not token:
+        raise ValueError("TELEGRAM_BOT_TOKEN не найден в переменных окружения")
+    
+    config = Config()
+    return ConfectioneryBot(token, config)
+
+
+def main():
+    """Основная функция запуска бота"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    try:
+        # Инициализация базы данных
+        db_manager.init_db()
+        logger.info("База данных инициализирована")
+        
+        # Создание и запуск бота
+        bot = create_bot()
+        bot.run()
+        
+    except Exception as e:
+        logger.error(f"Ошибка при запуске бота: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    main()

@@ -1,18 +1,22 @@
 import os
 import sqlite3
 import logging
-from sqlalchemy import create_engine, text
+from typing import Optional, Dict, List
+from sqlalchemy import create_engine, text, func
 from sqlalchemy.orm import sessionmaker, scoped_session
 from contextlib import contextmanager
 from dotenv import load_dotenv
 
 # Импортируем модели для создания таблиц
-from src.myconfbot.models import Base, Order, Product, Category, OrderStatus, User
-
+from src.myconfbot.models import Base, Order, Product, Category, OrderStatus, User, ProductPhoto
 from src.myconfbot.config import Config
 
 # Загрузка переменных окружения
 load_dotenv()
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     _instance = None
@@ -30,82 +34,112 @@ class DatabaseManager:
         if not self._initialized:
             self.use_postgres = os.getenv('USE_POSTGRES', 'false').lower() == 'true'
             self._initialize_engine()
+            self._create_tables()
             self._initialized = True
     
     def _initialize_engine(self):
         """Инициализация движка БД в зависимости от настроек"""
-        if self.use_postgres:
-            self._setup_postgresql()
-            self._current_db_type = 'postgresql'
-        else:
-            self._setup_sqlite()
-            self._current_db_type = 'sqlite'
+        try:
+            if self.use_postgres:
+                self._setup_postgresql()
+                self._current_db_type = 'postgresql'
+            else:
+                self._setup_sqlite()
+                self._current_db_type = 'sqlite'
+            
+            logger.info(f"✓ Используется {self._current_db_type} база данных")
+        except Exception as e:
+            logger.error(f"Ошибка инициализации БД: {e}")
+            raise
     
     def _setup_postgresql(self):
         """Настройка PostgreSQL соединения"""
         try:
+            db_user = os.getenv('DB_USER')
+            db_password = os.getenv('DB_PASSWORD')
+            db_host = os.getenv('DB_HOST')
+            db_port = os.getenv('DB_PORT')
+            db_name = os.getenv('DB_NAME')
+            
+            if not all([db_user, db_password, db_host, db_port, db_name]):
+                raise ValueError("Не все переменные окружения для PostgreSQL заданы")
+            
             self._engine = create_engine(
-                f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@"
-                f"{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+                f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}",
+                pool_pre_ping=True,  # Проверка соединения перед использованием
+                echo=False  # Установите True для отладки SQL запросов
             )
-            self._Session = scoped_session(sessionmaker(bind=self._engine))
-            # self._Session = sessionmaker(bind=self.engine)  # Должно быть self.Session
-            # Base.metadata.create_all(self.engine)
-
-            print("✓ Используется PostgreSQL база данных")
+            self._Session = scoped_session(sessionmaker(
+                bind=self._engine,
+                autocommit=False,
+                autoflush=False
+            ))
+            
         except Exception as e:
-            print(f"❌ Ошибка подключения к PostgreSQL: {e}")
-            print("⚠️  Переключаюсь на SQLite...")
-            self.use_postgres = False
-            self._setup_sqlite()
+            logger.error(f"❌ Ошибка подключения к PostgreSQL: {e}")
+            raise
     
     def _setup_sqlite(self):
         """Настройка SQLite соединения"""
-        os.makedirs('data', exist_ok=True)
-        self._engine = create_engine('sqlite:///data/confbot.db')
-        self._Session = scoped_session(sessionmaker(bind=self._engine))
-        print("✓ Используется SQLite база данных")
+        try:
+            os.makedirs('data', exist_ok=True)
+            self._engine = create_engine(
+                'sqlite:///data/confbot.db',
+                connect_args={'check_same_thread': False}  # Для многопоточности
+            )
+            self._Session = scoped_session(sessionmaker(
+                bind=self._engine,
+                autocommit=False,
+                autoflush=False
+            ))
+        except Exception as e:
+            logger.error(f"❌ Ошибка настройки SQLite: {e}")
+            raise
+    
+    def _create_tables(self):
+        """Создание таблиц в базе данных"""
+        try:
+            Base.metadata.create_all(self._engine)
+            logger.info(f"✓ Таблицы созданы/проверены в {self._current_db_type}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка создания таблиц: {e}")
+            raise
+    
+    def switch_database(self, use_postgres: bool):
+        """Переключение между базами данных"""
+        if self.use_postgres == use_postgres:
+            logger.warning(f"⚠️  Уже используется {'PostgreSQL' if use_postgres else 'SQLite'}")
+            return False
+        
+        try:
+            old_session = self._Session
+            self.use_postgres = use_postgres
+            self._initialize_engine()
+            
+            if old_session:
+                old_session.remove()
+            
+            logger.info(f"🔄 Успешно переключено на {'PostgreSQL' if use_postgres else 'SQLite'}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка переключения БД: {e}")
+            return False
     
     def switch_to_postgresql(self):
-        """Переключение на PostgreSQL (для миграции)"""
-        if self._current_db_type == 'postgresql':
-            print("⚠️  Уже используется PostgreSQL")
-            return False
-        
-        print("🔄 Переключение на PostgreSQL...")
-        self.use_postgres = True
-        old_session = self._Session
-        self._initialize_engine()
-        
-        if old_session:
-            old_session.remove()
-        
-        return self._current_db_type == 'postgresql'
+        """Переключение на PostgreSQL"""
+        return self.switch_database(True)
     
     def switch_to_sqlite(self):
-        """Переключение на SQLite (для отката)"""
-        if self._current_db_type == 'sqlite':
-            print("⚠️  Уже используется SQLite")
-            return False
-        
-        print("🔄 Переключение на SQLite...")
-        self.use_postgres = False
-        old_session = self._Session
-        self._initialize_engine()
-        
-        if old_session:
-            old_session.remove()
-        
-        return self._current_db_type == 'sqlite'
+        """Переключение на SQLite"""
+        return self.switch_database(False)
     
     def get_db_type(self):
         """Получение типа текущей БД"""
         return self._current_db_type
     
     def init_db(self):
-        """Инициализация базы данных"""
-        Base.metadata.create_all(self._engine)
-        print(f"✓ Таблицы созданы в {self._current_db_type}")
+        """Инициализация базы данных (алиас для обратной совместимости)"""
+        self._create_tables()
     
     def get_session(self):
         """Получение сессии БД"""
@@ -124,20 +158,251 @@ class DatabaseManager:
             session.commit()
         except Exception as e:
             session.rollback()
-            raise e
+            logger.error(f"Ошибка в сессии БД: {e}")
+            raise
         finally:
-            self.close_session()
+            session.close()
+
+    def execute_query(self, query: str, params: dict = None, fetch_one: bool = False):
+        """Выполнение SQL запроса с возвращением результата"""
+        try:
+            with self.session_scope() as session:
+                result = session.execute(text(query), params or {})
+                
+                if query.strip().upper().startswith('SELECT'):
+                    if fetch_one:
+                        row = result.fetchone()
+                        return dict(row._mapping) if row else None
+                    else:
+                        rows = result.fetchall()
+                        return [dict(row._mapping) for row in rows]
+                else:
+                    session.commit()
+                    return result.rowcount
+                    
+        except Exception as e:
+            logger.error(f"Ошибка выполнения запроса: {e}")
+            return None
     
-    # --- RAW SQL методы для совместимости ---
+    # def execute_query(self, query: str, params: tuple = None, fetch_one: bool = False):
+        
+        
+        # """Выполнение SQL запроса с возвращением результата"""
+        # try:
+        #     with self.session_scope() as session:
+        #         # Преобразуем параметры в словарь, если они переданы как кортеж
+        #         if isinstance(params, tuple):
+        #             # Создаем словарь параметров с именами :param1, :param2 и т.д.
+        #             params_dict = {f'param{i}': value for i, value in enumerate(params, 1)}
+        #             # Заменяем плейсхолдеры в запросе
+        #             query = query.replace('%s', ':param1').replace('?', ':param1')
+        #             for i in range(2, len(params) + 1):
+        #                 query = query.replace('%s', f':param{i}').replace('?', f':param{i}')
+        #         else:
+        #             params_dict = params or {}
+                
+        #         result = session.execute(text(query), params_dict)
+                
+        #         if query.strip().upper().startswith('SELECT'):
+        #             if fetch_one:
+        #                 row = result.fetchone()
+        #                 return dict(row._mapping) if row else None
+        #             else:
+        #                 rows = result.fetchall()
+        #                 return [dict(row._mapping) for row in rows]
+        #         else:
+        #             session.commit()
+        #             return result.rowcount
+                    
+        # except Exception as e:
+        #     logger.error(f"Ошибка выполнения запроса: {e}")
+        #     raise
     
-    def raw_execute(self, query, params=None):
+    # --- Методы для работы с пользователями ---
+    
+    def add_user(self, telegram_id: int, full_name: str, telegram_username: str = None, 
+                phone: str = None, is_admin: bool = False) -> User:
+        """Добавление нового пользователя"""
+        with self.session_scope() as session:
+            user = User(
+                telegram_id=telegram_id,
+                full_name=full_name,
+                telegram_username=telegram_username,
+                phone=phone,
+                is_admin=is_admin
+            )
+            session.add(user)
+            return user
+    
+    def get_user_info(self, telegram_id: int) -> Optional[Dict]:
+        """Получить информацию о пользователе в виде словаря"""
+        with self._Session() as session:
+            user = session.query(User).filter_by(telegram_id=telegram_id).first()
+            if user:
+                return {
+                    'id': user.id,
+                    'telegram_id': user.telegram_id,
+                    'full_name': user.full_name,
+                    'telegram_username': user.telegram_username,
+                    'is_admin': user.is_admin,
+                    'phone': user.phone,
+                    'address': user.address,
+                    'characteristics': user.characteristics,
+                    'photo_path': user.photo_path,
+                    'created_at': user.created_at
+                }
+            return None
+    
+    def get_all_users_info(self) -> List[dict]:
+        """Получить информацию о всех пользователях в виде списка словарей"""
+        with self._Session() as session:
+            users = session.query(User).all()
+            return [
+                {
+                    'id': user.id,
+                    'telegram_id': user.telegram_id,
+                    'full_name': user.full_name,
+                    'telegram_username': user.telegram_username,
+                    'is_admin': user.is_admin,
+                    'phone': user.phone,
+                    'address': user.address,
+                    'characteristics': user.characteristics,
+                    'photo_path': user.photo_path,
+                    'created_at': user.created_at
+                }
+                for user in users
+            ]
+    
+    def get_user_by_telegram_id(self, telegram_id: int) -> User:
+        """Поиск пользователя по telegram_id"""
+        with self.session_scope() as session:
+            return session.query(User).filter_by(telegram_id=telegram_id).first()
+    
+    def get_or_create_user(self, telegram_id: int, full_name: str, 
+                          telegram_username: str = None) -> User:
+        """Получить пользователя или создать нового"""
+        user = self.get_user_by_telegram_id(telegram_id)
+        if not user:
+            user = self.add_user(telegram_id, full_name, telegram_username)
+        return user
+    
+    def is_admin(self, telegram_id: int) -> bool:
+        """Проверка, является ли пользователь администратором"""
+        user = self.get_user_by_telegram_id(telegram_id)
+        return user.is_admin if user else False
+    
+    def update_user_info(self, telegram_id: int, **kwargs) -> bool:
+        """Обновление информации пользователя"""
+        with self.session_scope() as session:
+            user = session.query(User).filter_by(telegram_id=telegram_id).first()
+            if user:
+                for key, value in kwargs.items():
+                    if hasattr(user, key) and value is not None:
+                        setattr(user, key, value)
+                return True
+            return False
+    
+    def get_all_users(self) -> list:
+        """Получить всех пользователей"""
+        try:
+            session = self._Session()
+            users = session.query(User).all()
+            return users
+        except Exception as e:
+            self.logger.error(f"Ошибка при получении пользователей: {e}")
+            return []
+        finally:
+            session.close()
+                
+    def update_user_characteristic(self, telegram_id: int, characteristic: str) -> bool:
+        """Обновить характеристику пользователя"""
+        session = None
+        try:
+            session = self._Session()
+            user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            if user:
+                user.characteristics = characteristic
+                session.commit()
+                return True
+            return False
+        except Exception as e:
+            if session: 
+                session.rollback()
+            logger.error(f"Ошибка при обновлении характеристики: {e}")
+            return False
+        finally:
+            if session:
+                session.close()
+        
+    # --- Методы для работы с заказами ---
+    
+    def get_orders_by_status(self, status_list: list) -> list:
+        """Получить заказы по статусу"""
+        try:
+            session = self._Session()
+            orders = session.query(Order).filter(Order.status.in_(status_list)).all()
+            return orders
+        except Exception as e:
+            logger.error(f"Ошибка при получении заказов: {e}")
+            return []
+        finally:
+            if session: 
+                session.close()
+
+    def get_orders_statistics(self) -> dict:
+        """Получить статистику заказов"""
+        try:
+            session = self._Session()
+            result = {
+                'total': session.query(Order).count(),
+                'completed': session.query(Order).filter(Order.status == OrderStatus.COMPLETED).count(),
+                'in_progress': session.query(Order).filter(Order.status == OrderStatus.IN_PROGRESS).count(),
+                'new': session.query(Order).filter(Order.status == OrderStatus.NEW).count(),
+                'total_amount': session.query(func.sum(Order.total_amount)).scalar() or 0
+            }
+            return result
+        except Exception as e:
+            logger.error(f"Ошибка при получении статистики: {e}")
+            return {'total': 0, 'completed': 0, 'in_progress': 0, 'new': 0, 'total_amount': 0}
+        finally:
+            if session: 
+                session.close()
+    
+
+    def update_order_status(self, order_id: int, status: OrderStatus) -> bool:
+        """Обновить статус заказа"""
+        session = None  
+        try:
+            session = self._Session()
+            order = session.query(Order).filter(Order.id == order_id).first()
+            if order:
+                order.status = status
+                session.commit()
+                return True
+            return False
+        except Exception as e:
+            if session:
+                session.rollback()
+            logger.error(f"Ошибка при обновлении статуса заказа: {e}")
+            return False
+        finally:
+            if session: 
+                session.close()
+        
+    # --- Raw SQL методы для совместимости ---
+    
+    def raw_execute(self, query: str, params: tuple = None):
         """Выполнение raw SQL запроса"""
-        if self.use_postgres:
-            return self._raw_postgres(query, params)
-        else:
-            return self._raw_sqlite(query, params)
+        try:
+            if self.use_postgres:
+                return self._raw_postgres(query, params)
+            else:
+                return self._raw_sqlite(query, params)
+        except Exception as e:
+            logger.error(f"Ошибка выполнения raw SQL: {e}")
+            raise
     
-    def _raw_postgres(self, query, params):
+    def _raw_postgres(self, query: str, params: tuple):
         """Raw запрос для PostgreSQL"""
         import psycopg2
         from psycopg2.extras import RealDictCursor
@@ -161,7 +426,7 @@ class DatabaseManager:
         finally:
             conn.close()
     
-    def _raw_sqlite(self, query, params):
+    def _raw_sqlite(self, query: str, params: tuple):
         """Raw запрос для SQLite"""
         conn = sqlite3.connect('data/confbot.db')
         conn.row_factory = sqlite3.Row
@@ -179,187 +444,275 @@ class DatabaseManager:
         finally:
             conn.close()
     
-    def get_user_raw(self, telegram_id):
+    def get_user_raw(self, telegram_id: int):
         """Получение пользователя через raw SQL"""
         if self.use_postgres:
-            query = "SELECT * FROM customers WHERE telegram_id = %s"
+            query = "SELECT * FROM users WHERE telegram_id = %s"
         else:
-            query = "SELECT * FROM customers WHERE telegram_id = ?"
+            query = "SELECT * FROM users WHERE telegram_id = ?"
         
         result = self.raw_execute(query, (telegram_id,))
         return result[0] if result else None
     
-    # Старый блок работы с Юзерами с разбивкой на клиентов и админов
-    # def add_customer(self, telegram_id, first_name, username=None, phone=None):
-    #     """Добавление нового клиента"""
-    #     with self.session_scope() as session:
-    #         customer = Customer(
-    #             telegram_id=telegram_id,
-    #             first_name=first_name,
-    #             username=username,
-    #             phone=phone,
-    #             characteristic=CustomerCharacteristic.NEW
-    #         )
-    #         session.add(customer)
-    #         return customer
-    
-    # def get_customer_by_telegram_id(self, telegram_id):
-    #     """Поиск клиента по telegram_id"""
-    #     with self.session_scope() as session:
-    #         return session.query(Customer).filter_by(telegram_id=telegram_id).first()
-
-    # def add_admin(self, telegram_id, first_name, username=None, phone=None, address=None):
-    #     """Добавление нового администратора"""
-    #     with self.session_scope() as session:
-    #         from src.myconfbot.models import Admin
-    #         admin = Admin(
-    #             telegram_id=telegram_id,
-    #             first_name=first_name,
-    #             username=username,
-    #             phone=phone,
-    #             address=address
-    #         )
-    #         session.add(admin)
-    #         return admin
-    
-    # def get_admin_by_telegram_id(self, telegram_id):
-    #     """Поиск администратора по telegram_id"""
-    #     with self.session_scope() as session:
-    #         from src.myconfbot.models import Admin
-    #         return session.query(Admin).filter_by(telegram_id=telegram_id).first()
-    
-    # def is_admin(self, telegram_id):
-    #     """Проверка, является ли пользователь администратором"""
-    #     return self.get_admin_by_telegram_id(telegram_id) is not None
-    
-    # def update_admin_info(self, telegram_id, phone, address):
-    #     """Обновление информации администратора"""
-    #     with self.session_scope() as session:
-    #         from src.myconfbot.models import Admin
-    #         admin = session.query(Admin).filter_by(telegram_id=telegram_id).first()
-    #         if admin:
-    #             admin.phone = phone
-    #             admin.address = address
-    #             return True
-    #         return False
-    
-    # def update_customer_characteristic(self, telegram_id, characteristic):
-    #     """Обновление характеристики клиента"""
-    #     with self.session_scope() as session:
-    #         customer = session.query(Customer).filter_by(telegram_id=telegram_id).first()
-    #         if customer:
-    #             customer.characteristic = characteristic
-    #             return True
-    #         return False
-    
-    # Новый блок работы с юзерами с учетом новой таблицы Postgres
-    def add_user(self, telegram_id, full_name, telegram_username=None, phone=None, is_admin=False):
-        """Добавление нового пользователя"""
-        with self.session_scope() as session:
-            user = User(
-                telegram_id=telegram_id,
-                full_name=full_name,
-                telegram_username=telegram_username,
-                phone=phone,
-                is_admin=is_admin
-            )
-            session.add(user)
-            return user
-
-    def get_user_by_telegram_id(self, telegram_id):
-        """Поиск пользователя по telegram_id"""
-        with self.session_scope() as session:
-            user = session.query(User).filter_by(telegram_id=telegram_id).first()
-            if user:
-                session.expunge(user)  # Отключаем объект от сессии
-            return user
-
-    def is_admin(self, telegram_id):
-        """Проверка, является ли пользователь администратором"""
-        with self.session_scope() as session:
-            user = session.query(User).filter_by(telegram_id=telegram_id).first()
-            return user.is_admin if user else False
-
-    def update_user_info(self, telegram_id, full_name=None, phone=None, address=None, characteristics=None, photo_path=None):
-        """Обновление информации пользователя"""
-        with self.session_scope() as session:
-            user = session.query(User).filter_by(telegram_id=telegram_id).first()
-            if user:
-                if full_name: user.full_name = full_name
-                if phone: user.phone = phone
-                if address: user.address = address
-                if characteristics: user.characteristics = characteristics
-                if photo_path: user.photo_path = photo_path
-                return True
-            return False
-    
-    def get_orders_by_status(self, status_list):
-        """Получение заказов по статусу"""
-        with self.session_scope() as session:
-            return session.query(Order).filter(Order.status.in_(status_list)).all()
-    
-    def get_orders_statistics(self):
-        """Получение статистики заказов"""
-        with self.session_scope() as session:
-            from sqlalchemy import func
-            from src.myconfbot.models import OrderStatus
-            
-            stats = {
-                'total': session.query(Order).count(),
-                'completed': session.query(Order).filter_by(status=OrderStatus.COMPLETED).count(),
-                'in_progress': session.query(Order).filter_by(status=OrderStatus.IN_PROGRESS).count(),
-                'new': session.query(Order).filter_by(status=OrderStatus.NEW).count(),
-                'total_amount': session.query(func.sum(Order.total_amount)).scalar() or 0
-            }
-            return stats
-
-    def test_connection(self):
+    def test_connection(self) -> bool:
         """Тестирование подключения к БД"""
         try:
             with self.session_scope() as session:
                 session.execute(text("SELECT 1"))
-            print("✅ Подключение к БД успешно")
+            logger.info("✅ Подключение к БД успешно")
             return True
         except Exception as e:
-            print(f"❌ Ошибка подключения к БД: {e}")
+            logger.error(f"❌ Ошибка подключения к БД: {e}")
             return False
     
-    def update_order_status(self, order_id, status):
-        """Обновление статуса заказа"""
-        with self.session_scope() as session:
-            order = session.query(Order).filter_by(id=order_id).first()
-            if order:
-                order.status = status
-                return True
-            return False
-    
-    def get_all_users(self):
-        """Получить всех пользователей"""
-        try:
-            with self.session_scope() as session:  # Используем session_scope вместо прямого доступа к Session
-                users = session.query(User).all()
-                # Отключаем объекты от сессии чтобы избежать проблем с lazy loading
-                for user in users:
-                    session.expunge(user)
-                return users
-        except Exception as e:
-            logging.error(f"Ошибка при получении пользователей: {e}")
-        return []
+    # --- Методы для работы с продукцийе и категориями ---
 
-    def update_user_characteristic(self, telegram_id, characteristic):
-        """Обновить характеристику пользователя"""
+    def get_all_categories(self) -> List[dict]:
+        """Получить все категории"""
         try:
-            with self.session_scope() as session:  # Используем session_scope
-                user = session.query(User).filter_by(telegram_id=telegram_id).first()
-                if user:
-                    user.characteristics = characteristic
+            session = self._Session()
+            categories = session.query(Category).order_by(Category.name).all()
+            return [
+                {
+                    'id': category.id,
+                    'name': category.name,
+                    'description': category.description
+                }
+                for category in categories
+            ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении категорий: {e}")
+            return []
+        finally:
+            session.close()
+
+    def add_product(self, product_data: dict) -> bool:
+        """Добавить новый товар"""
+        try:
+            session = self._Session()
+            product = Product(
+                name=product_data.get('name'),
+                category_id=product_data.get('category_id'),
+                cover_photo_path=product_data.get('cover_photo_path', ''),
+                short_description=product_data.get('short_description', ''),
+                is_available=product_data.get('is_available', True),
+                measurement_unit=product_data.get('measurement_unit', 'шт'),
+                quantity=product_data.get('quantity', 0),
+                price=product_data.get('price', 0),
+                prepayment_conditions=product_data.get('prepayment_conditions', '')
+            )
+            session.add(product)
+            session.commit()
+            logger.info(f"Товар '{product.name}' успешно добавлен с ID {product.id}")
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Ошибка при добавлении товара: {e}")
+            return False
+        finally:
+            session.close()
+
+    def add_category(self, name: str, description: str = '') -> bool:
+        """Добавить новую категорию"""
+        try:
+            session = self._Session()
+            
+            # Проверяем, существует ли уже категория с таким названием
+            existing_category = session.query(Category).filter_by(name=name).first()
+            if existing_category:
+                logger.warning(f"Категория с названием '{name}' уже существует")
+                return False
+            
+            category = Category(
+                name=name,
+                description=description
+            )
+            session.add(category)
+            session.commit()
+            logger.info(f"Категория '{name}' успешно добавлена")
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.error(f"Ошибка при добавлении категории: {e}")
+            return False
+        finally:
+            session.close()
+
+    def add_product_returning_id(self, product_data: dict) -> int:
+        """Добавление товара и возвращение ID с использованием ORM"""
+        try:
+            with self.session_scope() as session:
+                product = Product(
+                    name=product_data.get('name'),
+                    category_id=product_data.get('category_id'),
+                    cover_photo_path=product_data.get('cover_photo_path', ''),
+                    short_description=product_data.get('short_description', ''),
+                    price=float(product_data.get('price', 0)),
+                    is_available=bool(product_data.get('is_available', True)),
+                    measurement_unit=product_data.get('measurement_unit', 'шт'),
+                    quantity=float(product_data.get('quantity', 0)),
+                    prepayment_conditions=product_data.get('prepayment_conditions', '')
+                )
+                session.add(product)
+                session.flush()  # Получаем ID без коммита
+                product_id = product.id
+                return product_id
+                
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении товара: {e}")
+            return None
+
+    def update_product(self, product_id: int, product_data: dict) -> bool:
+        """Обновление товара"""
+        try:
+            query = """
+                UPDATE products 
+                SET cover_photo_path = %s, additional_photos = %s
+                WHERE id = %s
+            """
+            # Конвертируем список фото в JSON или текст
+            additional_photos = product_data.get('additional_photos', [])
+            photos_str = ','.join(additional_photos)  # или используйте json.dumps()
+            
+            params = (
+                product_data.get('cover_photo_path', ''),
+                photos_str,
+                product_id
+            )
+            
+            self.execute_query(query, params)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении товара: {e}")
+            return False
+
+    # --- Методы для работы с фотографиями продукции ---
+
+    def add_product_photo(self, product_id: int, photo_path: str, is_main: bool = False) -> bool:
+        """Добавление фото товара"""
+        try:
+            with self.session_scope() as session:
+                # Если устанавливаем как основное, сбрасываем предыдущее
+                if is_main:
+                    session.query(ProductPhoto).filter_by(product_id=product_id, is_main=True).update({'is_main': False})
+                
+                photo = ProductPhoto(
+                    product_id=product_id,
+                    photo_path=photo_path,
+                    is_main=is_main
+                )
+                session.add(photo)
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении фото товара: {e}")
+            return False
+
+    def get_product_photos(self, product_id: int) -> List[dict]:
+        """Получение всех фото товара"""
+        try:
+            with self.session_scope() as session:
+                # photos = session.query(ProductPhoto).filter_by(product_id=product_id).order_by(ProductPhoto.id).all()
+                photos = session.query(ProductPhoto).filter_by(product_id=product_id).order_by(ProductPhoto.is_main.desc(), ProductPhoto.id).all()
+
+                return [
+                    {
+                        'id': photo.id,
+                        'photo_path': photo.photo_path,
+                        'is_main': photo.is_main
+                    }
+                    for photo in photos
+                ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении фото товара: {e}")
+            return []
+
+    def set_main_photo(self, product_id: int, photo_path: str) -> bool:
+        """Установка основного фото"""
+        try:
+            with self.session_scope() as session:
+                # Сбрасываем все is_main для этого товара
+                session.query(ProductPhoto).filter_by(product_id=product_id).update({'is_main': False})
+                
+                # Устанавливаем новое основное фото
+                photo = session.query(ProductPhoto).filter_by(product_id=product_id, photo_path=photo_path).first()
+                if photo:
+                    photo.is_main = True
                     return True
             return False
         except Exception as e:
-            logging.error(f"Ошибка при обновлении характеристики: {e}")
+            logger.error(f"Ошибка при установке основного фото: {e}")
+            return False
+
+    def update_product_cover_photo(self, product_id: int, cover_photo_path: str) -> bool:
+        """Обновление cover_photo_path в продукте"""
+        try:
+            with self.session_scope() as session:
+                product = session.query(Product).filter_by(id=product_id).first()
+                if product:
+                    product.cover_photo_path = cover_photo_path
+                    return True
+            return False
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении основного фото: {e}")
             return False
     
+    # --- Методы для вывода списка товаров ---
 
-    
+    # В класс DatabaseManager добавим методы:
+
+    def get_products_by_category(self, category_id: int) -> List[dict]:
+        """Получить товары по категории"""
+        try:
+            with self.session_scope() as session:
+                products = session.query(Product).filter_by(category_id=category_id).order_by(Product.name).all()
+                return [
+                    {
+                        'id': product.id,
+                        'name': product.name,
+                        'category_id': product.category_id,
+                        'cover_photo_path': product.cover_photo_path,
+                        'short_description': product.short_description,
+                        'price': float(product.price),
+                        'is_available': product.is_available,
+                        'measurement_unit': product.measurement_unit,
+                        'quantity': float(product.quantity),
+                        'prepayment_conditions': product.prepayment_conditions,
+                        'created_at': product.created_at,
+                        'updated_at': product.updated_at
+                    }
+                    for product in products
+                ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении товаров по категории: {e}")
+            return []
+
+    def get_product_by_id(self, product_id: int) -> Optional[dict]:
+        """Получить товар по ID"""
+        try:
+            with self.session_scope() as session:
+                product = session.query(Product).filter_by(id=product_id).first()
+                if product:
+                    category = session.query(Category).filter_by(id=product.category_id).first()
+                    return {
+                        'id': product.id,
+                        'name': product.name,
+                        'category_id': product.category_id,
+                        'category_name': category.name if category else 'Неизвестно',
+                        'cover_photo_path': product.cover_photo_path,
+                        'short_description': product.short_description,
+                        'price': float(product.price),
+                        'is_available': product.is_available,
+                        'measurement_unit': product.measurement_unit,
+                        'quantity': float(product.quantity),
+                        'prepayment_conditions': product.prepayment_conditions,
+                        'created_at': product.created_at,
+                        'updated_at': product.updated_at
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"Ошибка при получении товара: {e}")
+            return None
+
 # Глобальный экземпляр менеджера БД
 db_manager = DatabaseManager()

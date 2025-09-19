@@ -5,7 +5,7 @@ from .product import Product
 from .recipe import Recipe
 from .order import Order
 from .order_status import OrderStatus
-#from .customer import CustomerCharacteristic  # если еще нужно
+from .photo import ProductPhoto
 
 __all__ = [
     'Base',
@@ -15,6 +15,6 @@ __all__ = [
     'Recipe',
     'Order',
     'OrderStatus',
-    'CustomerCharacteristic'
+    'ProductPhoto',
 ]
 
