@@ -1,16 +1,15 @@
 import logging
+logger = logging.getLogger(__name__)
+
 from telebot import types
 from telebot.types import Message, CallbackQuery
 from .admin_base import BaseAdminHandler
-
-logger = logging.getLogger(__name__)
 
 class AdminMainHandler(BaseAdminHandler):
     """Обработчик главного меню администратора"""
     
     def __init__(self, bot, config, db_manager):
         super().__init__(bot, config, db_manager)
-        self.logger = logging.getLogger(__name__)
     
     def register_handlers(self):
         """Регистрация обработчиков главного меню"""
@@ -78,7 +77,7 @@ class AdminMainHandler(BaseAdminHandler):
             self.bot.answer_callback_query(callback.id)
             
         except Exception as e:
-            self.logger.error(f"Ошибка в admin callback: {e}", exc_info=True)
+            logger.error(f"Ошибка в admin callback: {e}", exc_info=True)
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при обработке")
     
     def _show_active_orders(self, message: Message):
@@ -162,7 +161,7 @@ class AdminMainHandler(BaseAdminHandler):
             self.bot.answer_callback_query(callback.id, "🔙 Возврат в главное меню")
                 
         except Exception as e:
-            self.logger.error(f"Ошибка при возврате в меню управления: {e}")
+            logger.error(f"Ошибка при возврате в меню управления: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при возврате")
     
     def _show_management_panel(self, message: Message):

@@ -1,4 +1,6 @@
 import logging
+logger = logging.getLogger(__name__)
+
 import os
 from typing import Optional
 
@@ -6,13 +8,15 @@ import telebot
 from dotenv import load_dotenv
 
 from src.myconfbot.config import Config
-from src.myconfbot.utils import db_manager
+logger = logging.getLogger(__name__)
+
+from src.myconfbot.utils.database import db_manager
 from src.myconfbot.handlers import HandlerFactory
 
 # Загрузка переменных окружения
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+
 
 
 class ConfectioneryBot:
@@ -46,10 +50,6 @@ def create_bot() -> ConfectioneryBot:
 
 def main():
     """Основная функция запуска бота"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
     
     try:
         # Инициализация базы данных

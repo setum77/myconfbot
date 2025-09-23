@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import os
 from telebot import types
 from telebot.types import Message, CallbackQuery
@@ -11,7 +12,6 @@ class UserManagementHandler(BaseAdminHandler):
     
     def __init__(self, bot, config, db_manager):
         super().__init__(bot, config, db_manager)
-        self.logger = logging.getLogger(__name__)
     
     def register_handlers(self):
         """Регистрация обработчиков управления пользователями"""
@@ -115,7 +115,7 @@ class UserManagementHandler(BaseAdminHandler):
             try:
                 self.bot.delete_message(callback.message.chat.id, callback.message.message_id)
             except Exception as e:
-                self.logger.warning(f"Не удалось удалить сообщение: {e}")
+                logger.warning(f"Не удалось удалить сообщение: {e}")
             
             # Проверяем наличие фото
             photo_path = user.get('photo_path')
@@ -132,7 +132,7 @@ class UserManagementHandler(BaseAdminHandler):
                         )
                         return
                 except Exception as e:
-                    self.logger.error(f"Ошибка при отправке фото пользователя: {e}")
+                    logger.error(f"Ошибка при отправке фото пользователя: {e}")
             
             # Если фото нет или не удалось отправить, отправляем текстовое сообщение
             self.bot.send_message(
@@ -143,7 +143,7 @@ class UserManagementHandler(BaseAdminHandler):
             )
             
         except Exception as e:
-            self.logger.error(f"Ошибка в show_user_detail: {e}", exc_info=True)
+            logger.error(f"Ошибка в show_user_detail: {e}", exc_info=True)
             try:
                 self.bot.answer_callback_query(callback.id, "❌ Ошибка при загрузке профиля")
             except:
@@ -220,7 +220,7 @@ class UserManagementHandler(BaseAdminHandler):
             self.bot.answer_callback_query(callback.id)
             
         except Exception as e:
-            self.logger.error(f"Ошибка в add_characteristic_start: {e}", exc_info=True)
+            logger.error(f"Ошибка в add_characteristic_start: {e}", exc_info=True)
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при начале редактирования")
     
     def _cancel_characteristic(self, callback: CallbackQuery):
@@ -275,7 +275,7 @@ class UserManagementHandler(BaseAdminHandler):
                 self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении характеристики")
                 
         except Exception as e:
-            self.logger.error(f"Ошибка при обновлении характеристики: {e}", exc_info=True)
+            logger.error(f"Ошибка при обновлении характеристики: {e}", exc_info=True)
             self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении характеристики")
     
     def _show_user_detail_from_message(self, message: Message, telegram_id: int):
@@ -304,7 +304,7 @@ class UserManagementHandler(BaseAdminHandler):
                     )
                     return
             except Exception as e:
-                self.logger.error(f"Ошибка при отправке фото: {e}")
+                logger.error(f"Ошибка при отправке фото: {e}")
         
         # Если фото нет или не удалось отправить
         self.bot.send_message(

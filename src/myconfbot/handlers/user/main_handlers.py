@@ -4,9 +4,8 @@ from typing import Optional
 
 from telebot import types
 from telebot.types import Message, CallbackQuery
-
-from src.myconfbot.handlers.user.base_user_handler import BaseUserHandler
 from src.myconfbot.utils.content_manager import ContentManager
+from src.myconfbot.handlers.user.base_user_handler import BaseUserHandler
 
 
 class MainHandler(BaseUserHandler):

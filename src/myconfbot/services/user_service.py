@@ -1,6 +1,6 @@
 from typing import Optional, List
 from src.myconfbot.utils.database import DatabaseManager
-from src.myconfbot.models import User
+from src.myconfbot.utils.models import User
 
 class UserService:
     """Сервис для работы с пользователями"""

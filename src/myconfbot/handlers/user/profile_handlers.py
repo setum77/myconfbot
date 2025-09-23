@@ -3,13 +3,13 @@ import os
 import io
 from typing import Optional
 from PIL import Image
-
+from src.myconfbot.config import Config
 from telebot import types
 from telebot.types import Message, CallbackQuery
 
 from src.myconfbot.handlers.user.base_user_handler import BaseUserHandler
 
-
+# Config.setup_logging()
 class ProfileHandler(BaseUserHandler):
     """Обработчик управления профилем пользователя"""
     

@@ -1,4 +1,5 @@
 import logging
+logger = logging.getLogger(__name__)
 import os
 import tempfile
 from telebot import types
@@ -13,7 +14,6 @@ class ContentManagementHandler(BaseAdminHandler):
     
     def __init__(self, bot, config, db_manager):
         super().__init__(bot, config, db_manager)
-        self.logger = logging.getLogger(__name__)
         self.content_manager = ContentManager()
     
     def register_handlers(self):
@@ -137,7 +137,7 @@ class ContentManagementHandler(BaseAdminHandler):
             
             self.bot.answer_callback_query(callback.id)
         except Exception as e:
-            self.logger.error(f"Ошибка в edit_content_callback: {e}", exc_info=True)
+            logger.error(f"Ошибка в edit_content_callback: {e}", exc_info=True)
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при открытии редактора")
     
     def _keep_original_callback(self, callback: CallbackQuery):
@@ -167,7 +167,7 @@ class ContentManagementHandler(BaseAdminHandler):
                 self.bot.answer_callback_query(callback.id, "❌ Ошибка: не найден оригинальный текст")
                 
         except Exception as e:
-            self.logger.error(f"Ошибка в keep_original_callback: {e}", exc_info=True)
+            logger.error(f"Ошибка в keep_original_callback: {e}", exc_info=True)
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при сохранении")
     
     def _cancel_editing_callback(self, callback: CallbackQuery):
@@ -213,7 +213,7 @@ class ContentManagementHandler(BaseAdminHandler):
             self.bot.answer_callback_query(callback.id)
             
         except Exception as e:
-            self.logger.error(f"Ошибка в preview_content_callback: {e}", exc_info=True)
+            logger.error(f"Ошибка в preview_content_callback: {e}", exc_info=True)
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при предпросмотре")
     
     def _handle_content_edit(self, message: Message):
@@ -254,7 +254,7 @@ class ContentManagementHandler(BaseAdminHandler):
                 self.bot.send_message(message.chat.id, "❌ Ошибка при сохранении файла")
                 
         except Exception as e:
-            self.logger.error(f"Ошибка при сохранении контента: {e}", exc_info=True)
+            logger.error(f"Ошибка при сохранении контента: {e}", exc_info=True)
             self.bot.send_message(message.chat.id, "❌ Ошибка при сохранении файла")
     
     def _download_file_callback(self, callback: CallbackQuery):
@@ -284,15 +284,15 @@ class ContentManagementHandler(BaseAdminHandler):
                     )
                 self.bot.answer_callback_query(callback.id, "✅ Файл отправлен")
             except Exception as e:
-                self.logger.error(f"Ошибка при отправке файла: {e}")
+                logger.error(f"Ошибка при отправке файла: {e}")
                 self.bot.answer_callback_query(callback.id, "❌ Ошибка при отправке")
             finally:
                 # Удаляем временный файл
                 try:
                     os.unlink(temp_file_path)
                 except Exception as e:
-                    self.logger.error(f"Ошибка при удалении временного файла: {e}")
+                    logger.error(f"Ошибка при удалении временного файла: {e}")
                 
         except Exception as e:
-            self.logger.error(f"Ошибка при скачивании файла: {e}", exc_info=True)
+            logger.error(f"Ошибка при скачивании файла: {e}", exc_info=True)
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при скачивании")

@@ -1,3 +1,6 @@
+import logging
+logger = logging.getLogger(__name__)
+
 from telebot.types import Message
 
 from .admin_base import BaseAdminHandler

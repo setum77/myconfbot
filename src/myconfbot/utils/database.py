@@ -1,23 +1,22 @@
+import logging
+logger = logging.getLogger(__name__)
+
 import os
 import sqlite3
 import logging
 from typing import Optional, Dict, List
+from src.myconfbot.config import Config
 from sqlalchemy import create_engine, text, func
 from sqlalchemy.orm import sessionmaker, scoped_session
 from contextlib import contextmanager
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Импортируем модели для создания таблиц
-from src.myconfbot.models import Base, Order, Product, Category, OrderStatus, User, ProductPhoto
-from src.myconfbot.config import Config
+from .models import Base, Order, Product, Category, OrderStatus, User, ProductPhoto
 
 # Загрузка переменных окружения
 load_dotenv()
-
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 class DatabaseManager:
     _instance = None
     _engine = None
@@ -31,6 +30,7 @@ class DatabaseManager:
         return cls._instance
     
     def __init__(self):
+        os.makedirs('data', exist_ok=True)
         if not self._initialized:
             self.use_postgres = os.getenv('USE_POSTGRES', 'false').lower() == 'true'
             self._initialize_engine()
@@ -309,7 +309,7 @@ class DatabaseManager:
             users = session.query(User).all()
             return users
         except Exception as e:
-            self.logger.error(f"Ошибка при получении пользователей: {e}")
+            logger.error(f"Ошибка при получении пользователей: {e}")
             return []
         finally:
             session.close()
@@ -585,6 +585,72 @@ class DatabaseManager:
             
         except Exception as e:
             logger.error(f"Ошибка при обновлении товара: {e}")
+            return False
+    
+    # def update_product_field(self, product_id: int, field: str, value) -> bool:
+    #     """Обновление конкретного поля товара"""
+    #     try:
+    #         query = f"UPDATE products SET {field} = %s, updated_at = NOW() WHERE id = %s"
+    #         # self.execute_query(query, (value, product_id))
+    #         with self.Session() as session:
+    #             session.execute(text(query), {'value': value, 'product_id': product_id})
+    #             session.commit()
+    #         return True
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при обновлении поля {field}: {e}")
+    #         return False
+
+    def update_product_field(self, product_id: int, field: str, value) -> bool:
+        """Обновление конкретного поля товара"""
+        logger.info(f"Начало обновления: product_id={product_id}, field={field}, value={value}")
+        try:
+            # Защита от попытки обновить поле id
+            if field == 'id':
+                logger.error("Попытка обновить поле id запрещена")
+                return False
+                
+            with self.session_scope() as session:
+                product = session.query(Product).filter_by(id=product_id).first()
+                if not product:
+                    logger.error(f"Товар с ID {product_id} не найден")
+                    return False
+                    
+                # Обновляем поле
+                if hasattr(product, field):
+                    setattr(product, field, value)
+                    product.updated_at = datetime.utcnow()
+                else:
+                    logger.error(f"Поле {field} не существует в модели Product")
+                    return False
+                    
+                session.commit()
+            
+            logger.info(f"Поле {field} товара {product_id} обновлено на: {value}")
+            return True
+            
+        except Exception as e:
+            error_msg = f"Ошибка при обновлении поля {field} товара {product_id}: {e}"
+            logger.error(error_msg)
+            return False
+    
+    def delete_product(self, product_id: int) -> bool:
+        """Удаление товара из базы данных"""
+        print(f"DEBUG: DatabaseManager.delete_product called for {product_id}")
+        try:
+            with self.session_scope() as session:
+                # Сначала удаляем фотографии
+                photos_deleted = session.query(ProductPhoto).filter_by(product_id=product_id).delete()
+                print(f"DEBUG: Deleted {photos_deleted} photos from database")
+                # Затем удаляем товар
+                product = session.query(Product).filter_by(id=product_id).first()
+                if product:
+                    session.delete(product)
+                    print(f"DEBUG: Product {product_id} marked for deletion")
+                    return True
+            print(f"DEBUG: Product {product_id} not found in database")
+            return False
+        except Exception as e:
+            logger.error(f"Ошибка при удалении товара: {e}")
             return False
 
     # --- Методы для работы с фотографиями продукции ---

@@ -1,5 +1,7 @@
-import os
 import logging
+logger = logging.getLogger(__name__)
+
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -22,10 +24,6 @@ class DatabaseConfig:
             self.url = os.getenv('DATABASE_URL', 'sqlite:///data/confbot.db')
 
 class Config:
-    # Константы
-    LOGS_DIR = Path('logs')
-    LOG_FILE = LOGS_DIR / 'bot.log'
-    
     def __init__(self, bot_token=None, admin_ids=None):
         self.bot_token = bot_token or self.get_bot_token()
         self.admin_ids = admin_ids or self.get_admin_ids()
@@ -41,57 +39,6 @@ class Config:
             )
         return token
     
-    @staticmethod
-    def get_log_level():
-        """Получить уровень логирования из env"""
-        level = os.getenv('LOG_LEVEL', 'INFO').upper()
-        return getattr(logging, level, logging.INFO)
-    
-    @classmethod
-    def setup_logging(cls):
-        """Настройка логирования с созданием директорий"""
-        # Создаем директорию для логов
-        cls.LOGS_DIR.mkdir(exist_ok=True)
-        
-        # Получаем уровень логирования
-        log_level = cls.get_log_level()
-        
-        # Форматтер для файлов
-        file_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        
-        # Форматтер для консоли
-        console_formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%H:%M:%S'
-        )
-        
-        # Файловый обработчик
-        file_handler = logging.FileHandler(
-            cls.LOG_FILE,
-            encoding='utf-8'
-        )
-        file_handler.setFormatter(file_formatter)
-        file_handler.setLevel(log_level)
-        
-        # Консольный обработчик
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(console_formatter)
-        console_handler.setLevel(log_level)
-        
-        # Настройка root logger
-        logging.basicConfig(
-            level=log_level,
-            handlers=[file_handler, console_handler],
-            force=True
-        )
-        
-        logger = logging.getLogger('ConfectioneryBot')
-        logger.info("Настройка логирования завершена")
-        return logger
-
     @staticmethod
     def get_admin_ids():
         """Получение ID администраторов"""

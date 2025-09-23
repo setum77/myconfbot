@@ -1,29 +1,48 @@
 import logging
+logger = logging.getLogger(__name__)
+
 import os
 import uuid
 from datetime import datetime
 from telebot import types
 from telebot.types import Message, CallbackQuery
+from PIL import Image
+from src.myconfbot.config import Config
 
 from .admin_base import BaseAdminHandler
 from .product_states import ProductState
 
-logger = logging.getLogger(__name__)
-
+# Config.setup_logging()
 class ProductManagementHandler(BaseAdminHandler):
     """Обработчик управления продукцией"""
     
     def __init__(self, bot, config, db_manager):
         super().__init__(bot, config, db_manager)
-        self.logger = logging.getLogger(__name__)
-        self.photos_dir = "data/products"
-        os.makedirs(self.photos_dir, exist_ok=True)
+        self.photos_dir = "data/products/"
+        # os.makedirs(self.photos_dir, exist_ok=True)
+
+        # Проверяем и создаем директорию с правами
+        try:
+            os.makedirs(self.photos_dir, exist_ok=True)
+            # Проверяем права на запись
+            test_file = os.path.join(self.photos_dir, 'test_write.txt')
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            logger.info(f"✓ Директория {self.photos_dir} доступна для записи")
+        except Exception as e:
+            logger.error(f"❌ Ошибка доступа к директории {self.photos_dir}: {e}")
+            # Пробуем создать в текущей директории
+            self.photos_dir = "products_photos/"
+            os.makedirs(self.photos_dir, exist_ok=True)
+            logger.error(f"Используем альтернативную директорию: {self.photos_dir}")
     
     def register_handlers(self):
         """Регистрация обработчиков управления продукцией"""
         self._register_product_callbacks()
         self._register_product_states()
         self._register_category_states()
+        self._register_edit_handlers() 
 
     
     def _register_product_callbacks(self):
@@ -44,24 +63,88 @@ class ProductManagementHandler(BaseAdminHandler):
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('view_back_'))
         def handle_view_back(callback: CallbackQuery):
             self._handle_view_back(callback)
+        
+        # Обработчики для редактирования
+        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('edit_'))
+        def handle_edit_callbacks(callback: CallbackQuery):
+            self._handle_edit_callbacks(callback)
     
     def _register_product_states(self):
         """Регистрация обработчиков состояний товаров"""
+
         # 12.1 Дополнительные фото
         @self.bot.message_handler(
             content_types=['photo'],
-            func=lambda message: self.states_manager.get_product_state(message.from_user.id) == ProductState.WAITING_ADDITIONAL_PHOTOS
+            func=lambda message: (
+                print(f"DEBUG: Checking additional photos condition for user {message.from_user.id}") or
+                self.states_manager.get_product_state(message.from_user.id) == ProductState.WAITING_ADDITIONAL_PHOTOS
+            )
         )
         def handle_additional_photos(message: Message):
+            print("DEBUG: Additional photos handler triggered!")
             self._handle_additional_photos(message)
-        
-        # 11.1 Основное фото
+
+        # # 12.1 Дополнительные фото - УПРОЩЕННАЯ ВЕРСИЯ
+        # @self.bot.message_handler(content_types=['photo'])
+        # def handle_additional_photos(message: Message):
+        #     user_id = message.from_user.id
+        #     current_state = self.states_manager.get_product_state(user_id)
+            
+        #     # Проверяем состояние в теле функции, а не в декораторе
+        #     if current_state == ProductState.WAITING_ADDITIONAL_PHOTOS:
+        #         print("DEBUG: Additional photos handler triggered!")
+        #         self._handle_additional_photos(message)
+        #     else:
+        #         print(f"DEBUG: Photo received but state is {current_state}, not WAITING_ADDITIONAL_PHOTOS")
+
+        # # 12.2 Дополнительные фото (кнопка "Готово")
+        # @self.bot.message_handler(
+        #     func=lambda message: (
+        #         self.states_manager.get_product_state(message.from_user.id) == ProductState.WAITING_ADDITIONAL_PHOTOS and
+        #         message.text == "✅ Готово"
+        #     )
+        # )
+        # def handle_photos_done(message: Message):
+        #     print("DEBUG: Photos done handler called!")
+        #     self._handle_photos_done(message)
+
+        # 12.2 Дополнительные фото (кнопка "Готово")
+        @self.bot.message_handler(func=lambda message: message.text == "✅ Готово")
+        def handle_photos_done(message: Message):
+            user_id = message.from_user.id
+            current_state = self.states_manager.get_product_state(user_id)
+            
+            # Проверяем состояние в теле функции
+            if current_state == ProductState.WAITING_ADDITIONAL_PHOTOS:
+                print("DEBUG: Photos done handler called!")
+                self._handle_photos_done(message)
+            else:
+                print(f"DEBUG: 'Готово' received but state is {current_state}")
+
+        # 13.1 Выбор главного фото
         @self.bot.message_handler(
-            content_types=['photo'],
-            func=lambda message: self.states_manager.get_product_state(message.from_user.id) == ProductState.WAITING_MAIN_PHOTO
+            func=lambda message: self.states_manager.get_product_state(message.from_user.id) == ProductState.SELECTING_MAIN_PHOTO
         )
-        def handle_main_photo(message: Message):
-            self._handle_main_photo(message)
+        def handle_selecting_main_photo(message: Message):
+            self._handle_selecting_main_photo(message)
+
+
+        # 10.1 Спросить про фото
+        @self.bot.message_handler(
+            func=lambda message: self.states_manager.get_product_state(message.from_user.id) == ProductState.ASKING_FOR_PHOTOS
+        )
+        def handle_asking_for_photos(message: Message):
+            self._handle_asking_for_photos(message)
+        
+        # Обработчик отмены
+        @self.bot.message_handler(
+            func=lambda message: (
+                self.states_manager.get_product_state(message.from_user.id) is not None and
+                message.text == "❌ Отмена"
+            )
+        )
+        def handle_product_cancel(message: Message):
+            self._cancel_product_creation_message(message)
 
         # 1. Название
         @self.bot.message_handler(
@@ -126,40 +209,6 @@ class ProductManagementHandler(BaseAdminHandler):
         def handle_product_confirmation(message: Message):
             self._handle_product_confirmation(message)
 
-        # 10.1 Спросить про фото
-        @self.bot.message_handler(
-            func=lambda message: self.states_manager.get_product_state(message.from_user.id) == ProductState.ASKING_FOR_PHOTOS
-        )
-        def handle_asking_for_photos(message: Message):
-            self._handle_asking_for_photos(message)
-        
-        # Обработчик кнопки "Готово" для дополнительных фото
-        @self.bot.message_handler(
-            func=lambda message: (
-                self.states_manager.get_product_state(message.from_user.id) == ProductState.WAITING_ADDITIONAL_PHOTOS and
-                message.text == "✅ Готово"
-            )
-        )
-        def handle_photos_done(message: Message):
-            self._handle_photos_done(message)
-    
-        # 13.1 Выбор главного фото
-        @self.bot.message_handler(
-            func=lambda message: self.states_manager.get_product_state(message.from_user.id) == ProductState.SELECTING_MAIN_PHOTO
-        )
-        def handle_selecting_main_photo(message: Message):
-            self._handle_selecting_main_photo(message)
-        
-        # Обработчик отмены
-        @self.bot.message_handler(
-            func=lambda message: (
-                self.states_manager.get_product_state(message.from_user.id) is not None and
-                message.text == "❌ Отмена"
-            )
-        )
-        def handle_product_cancel(message: Message):
-            self._cancel_product_creation_message(message)
-
    
     def _register_category_states(self):
         """Регистрация обработчиков состояний категорий"""
@@ -176,6 +225,21 @@ class ProductManagementHandler(BaseAdminHandler):
         )
         def handle_category_description(message: Message):
             self._handle_category_description(message)
+
+    def _register_edit_handlers(self):
+        """Регистрация обработчиков для редактирования"""
+        # Обработчики callback'ов для редактирования
+        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('edit_'))
+        def handle_edit_callbacks(callback: CallbackQuery):
+            self._handle_edit_callbacks(callback)
+        
+        # Обработчики состояний редактирования
+        @self.bot.message_handler(
+            func=lambda message: self.states_manager.get_management_state(message.from_user.id) is not None and
+            self.states_manager.get_management_state(message.from_user.id).get('state', '').startswith('editing_')
+        )
+        def handle_edit_states(message: Message):
+            self._handle_edit_states(message)
     
     
     def _handle_product_callbacks(self, callback: CallbackQuery):
@@ -191,7 +255,7 @@ class ProductManagementHandler(BaseAdminHandler):
             elif data == 'product_add_category':
                 self._add_category_start(callback)
             elif data == 'product_edit':
-                self._edit_products(callback.message)
+                self._edit_products_start(callback) # self._edit_products(callback.message)
             elif data == 'product_view':
                 self._view_products(callback.message)
             elif data == 'product_delete':
@@ -200,13 +264,15 @@ class ProductManagementHandler(BaseAdminHandler):
                 self._cancel_product_creation(callback)
             elif data == 'category_cancel': 
                 self._cancel_category_creation(callback)
-            elif data == 'product_confirm':
-                self._confirm_product_creation(callback)
+            elif data == 'product_edit_back':
+                self.manage_products(callback.message)
+            # elif data == 'product_confirm':
+            #     self._confirm_product_creation(callback)
                 
             self.bot.answer_callback_query(callback.id)
             
         except Exception as e:
-            self.logger.error(f"Ошибка в product callback: {e}", exc_info=True)
+            logger.error(f"Ошибка в product callback: {e}", exc_info=True)
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при обработке")
     
     def manage_products(self, message: Message):
@@ -236,7 +302,8 @@ class ProductManagementHandler(BaseAdminHandler):
         )
     
     def _add_product_start(self, callback: CallbackQuery):
-        """Начало добавления товара"""
+        """1. Начало добавления товара"""
+        print(f'\n === 1. Начало добавления товара ===\n')
         # Инициализируем состояние
         self.states_manager.set_product_state(callback.from_user.id, {
             'state': ProductState.WAITING_NAME,
@@ -355,21 +422,32 @@ class ProductManagementHandler(BaseAdminHandler):
 
     def _handle_asking_for_photos(self, message: Message):
         """Обработка ответа на вопрос о фотографиях"""
+        print(f'\n == Обработка вопроса о фото {message.text=}')
+        
         user_id = message.from_user.id
         product_data = self.states_manager.get_product_data(user_id)
-        
+
         if message.text == "✅ Да":
-            # Переходим к добавлению основного фото
+            # Удаляем предыдущее сообщение с кнопками
+            try:
+                self.bot.delete_message(message.chat.id, message.message_id)
+            except Exception as e:
+                print(f"Не удалось удалить сообщение: {e}")
+            
+            # Переходим к добавлению дополнительных фото
+            new_state = ProductState.WAITING_ADDITIONAL_PHOTOS
+            print(f'Устанавливаем новое состояние: {new_state}')
             self.states_manager.set_product_state(user_id, {
-                'state': ProductState.WAITING_MAIN_PHOTO,
+                'state': new_state,
                 'product_data': product_data
             })
-            
+
             self.bot.send_message(
                 message.chat.id,
-                "📸 Отправьте <b>основное фото</b> товара:",
+                "📸 Отправьте <b>фотографии</b> товара (можно несколько):\n\n"
+                "После добавления всех фото нажмите '✅ Готово'",
                 parse_mode='HTML',
-                reply_markup=self._create_cancel_keyboard()
+                reply_markup=self._create_photos_done_keyboard()
             )
         
         elif message.text == "❌ Нет":
@@ -382,8 +460,6 @@ class ProductManagementHandler(BaseAdminHandler):
                 parse_mode='HTML',
                 reply_markup=types.ReplyKeyboardRemove()
             )
-            
-            # Возвращаемся к управлению продукцией
             self.manage_products(message)
         
         else:
@@ -394,78 +470,103 @@ class ProductManagementHandler(BaseAdminHandler):
             )
     
     
-    def _handle_main_photo(self, message: Message):
-        """Обработка основного фото"""
-        user_id = message.from_user.id
-        product_data = self.states_manager.get_product_data(user_id)
+    # def _handle_main_photo(self, message: Message):
+    #     """Обработка основного фото"""
+    #     print('Обработка основного фото')
+    #     user_id = message.from_user.id
+    #     product_data = self.states_manager.get_product_data(user_id)
         
-        try:
-            # Сохраняем основное фото
-            photo_id = message.photo[-1].file_id
-            photo_path = self._save_photo(photo_id, product_data['id'])  # Сохраняем сразу в папку товара
+    #     try:
+    #         # Сохраняем основное фото
+    #         photo_id = message.photo[-1].file_id
+    #         photo_path = self._save_photo(photo_id, product_data['id'])  # Сохраняем сразу в папку товара
             
-            if photo_path:
-                # Сохраняем фото в базу
-                self.db_manager.add_product_photo(product_data['id'], photo_path, is_main=True)
+    #         if photo_path:
+    #             # Сохраняем фото в базу
+    #             self.db_manager.add_product_photo(product_data['id'], photo_path, is_main=True)
                 
-                # Обновляем данные
-                product_data['cover_photo_path'] = photo_path
-                self.db_manager.update_product_cover_photo(product_data['id'], photo_path)
-                self.states_manager.update_product_data(user_id, product_data)
+    #             # Обновляем данные
+    #             product_data['cover_photo_path'] = photo_path
+    #             self.db_manager.update_product_cover_photo(product_data['id'], photo_path)
+    #             self.states_manager.update_product_data(user_id, product_data)
                 
-                # Переходим к дополнительным фото
-                self.states_manager.set_product_state(user_id, {
-                    'state': ProductState.WAITING_ADDITIONAL_PHOTOS,
-                    'product_data': product_data
-                })
+    #             # Переходим к дополнительным фото
+    #             self.states_manager.set_product_state(user_id, {
+    #                 'state': ProductState.WAITING_ADDITIONAL_PHOTOS,
+    #                 'product_data': product_data
+    #             })
                 
-                self.bot.send_message(
-                    message.chat.id,
-                    "✅ Основное фото сохранено!\n\n"
-                    "📸 Теперь можете отправить <b>дополнительные фото</b> "
-                    "или нажмите '✅ Готово' чтобы завершить:",
-                    parse_mode='HTML',
-                    reply_markup=self._create_photos_done_keyboard()
-                )
+    #             self.bot.send_message(
+    #                 message.chat.id,
+    #                 "✅ Основное фото сохранено!\n\n"
+    #                 "📸 Теперь можете отправить <b>дополнительные фото</b> "
+    #                 "или нажмите '✅ Готово' чтобы завершить:",
+    #                 parse_mode='HTML',
+    #                 reply_markup=self._create_photos_done_keyboard()
+    #             )
     
-        except Exception as e:
-            self.logger.error(f"Ошибка при обработке основного фото: {e}")
-            self.bot.send_message(
-                message.chat.id,
-                "❌ Ошибка при сохранении фото. Попробуйте еще раз.",
-                reply_markup=self._create_cancel_keyboard()
-            )
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при обработке основного фото: {e}")
+    #         self.bot.send_message(
+    #             message.chat.id,
+    #             "❌ Ошибка при сохранении фото. Попробуйте еще раз.",
+    #             reply_markup=self._create_cancel_keyboard()
+    #         )
     
     
     def _handle_additional_photos(self, message: Message):
         """Обработка дополнительных фотографий"""
+        print(f'\n == обработка доп. фото {message=}, {message.photo=}\n')
         user_id = message.from_user.id
         product_data = self.states_manager.get_product_data(user_id)
+        print(f'Handling additional photo for product ID: {product_data.get("id")}')
         
         try:
             # Сохраняем фото
             photo_id = message.photo[-1].file_id
-            photo_path = self._save_photo(photo_id, product_data['id'])  # Сохраняем сразу в папку товара
+            print(f'Photo file ID: {photo_id}')
+            photo_path = self._save_photo(photo_id, product_data['id'])
+            print(f'Saved photo path: {photo_path}')
             
             if photo_path:
                 # Сохраняем фото в базу (пока не как основное)
-                self.db_manager.add_product_photo(product_data['id'], photo_path, is_main=False)
+                success = self.db_manager.add_product_photo(product_data['id'], photo_path, is_main=False)
+                print(f'Photo added to DB: {success}')
                 
-                # Получаем обновленный список фото
-                photos = self.db_manager.get_product_photos(product_data['id'])
-                
+                if success:
+                    # Добавляем путь к фото в данные продукта
+                    if 'additional_photos' not in product_data:
+                        product_data['additional_photos'] = []
+                    product_data['additional_photos'].append(photo_path)
+                    self.states_manager.update_product_data(user_id, product_data)
+                    
+                    # Получаем обновленный список фото из БД
+                    photos = self.db_manager.get_product_photos(product_data['id'])
+                    print(f'Total photos in DB: {len(photos)}')
+                    
+                    self.bot.send_message(
+                        message.chat.id,
+                        f"✅ Фото добавлено! Всего фото: {len(photos)}\n"
+                        "Можете отправить еще фото или нажмите '✅ Готово' чтобы завершить",
+                        reply_markup=self._create_photos_done_keyboard()
+                    )
+                else:
+                    self.bot.send_message(
+                        message.chat.id,
+                        "❌ Ошибка при сохранении фото в базу данных.",
+                        reply_markup=self._create_photos_done_keyboard()
+                    )
+            else:
                 self.bot.send_message(
                     message.chat.id,
-                    f"✅ Фото добавлено! Всего фото: {len(photos)}\n"
-                    "Можете отправить еще фото или нажмите '✅ Готово' чтобы завершить",
+                    "❌ Ошибка при сохранении фото на диск.",
                     reply_markup=self._create_photos_done_keyboard()
                 )
         
         except Exception as e:
-            self.logger.error(f"Ошибка при обработке дополнительного фото: {e}")
-                
-        except Exception as e:
-            print(f"ERROR: Ошибка при обработке фото: {e}")
+            logger.error(f"Ошибка при обработке дополнительного фото: {e}")
+            import traceback
+            traceback.print_exc()
             self.bot.send_message(
                 message.chat.id,
                 "❌ Произошла ошибка при обработке фото. Попробуйте еще раз.",
@@ -507,14 +608,16 @@ class ProductManagementHandler(BaseAdminHandler):
                 self.bot.send_message(
                     message.chat.id,
                     f"❌ Неверный номер. Введите число от 1 до {len(photos)}:",
-                    reply_markup=self._create_cancel_keyboard()
+                    reply_markup=self._create_photo_selection_keyboard(photos)
                 )
         
         except ValueError:
             self.bot.send_message(
                 message.chat.id,
                 "❌ Пожалуйста, введите номер фото:",
-                reply_markup=self._create_cancel_keyboard()
+                reply_markup=self._create_photo_selection_keyboard(
+                    self.db_manager.get_product_photos(product_data['id'])
+                )
             )
     
     def _handle_photos_done(self, message: Message):
@@ -524,16 +627,32 @@ class ProductManagementHandler(BaseAdminHandler):
         
         photos = self.db_manager.get_product_photos(product_data['id'])
         
-        if len(photos) <= 1:
-            # Если только одно фото (основное), просто завершаем
+        if len(photos) == 0:
+            # Если нет фото, просто завершаем
             self.states_manager.clear_product_state(user_id)
             self.bot.send_message(
                 message.chat.id,
-                f"✅ Товар <b>'{product_data['name']}'</b> успешно добавлен!",
+                f"✅ Товар <b>'{product_data['name']}'</b> успешно добавлен без фотографий!",
                 parse_mode='HTML',
                 reply_markup=types.ReplyKeyboardRemove()
             )
             self.manage_products(message)
+        
+        elif len(photos) == 1:
+            # Если только одно фото, устанавливаем его как основное
+            photo = photos[0]
+            self.db_manager.set_main_photo(product_data['id'], photo['photo_path'])
+            self.db_manager.update_product_cover_photo(product_data['id'], photo['photo_path'])
+            
+            self.states_manager.clear_product_state(user_id)
+            self.bot.send_message(
+                message.chat.id,
+                f"✅ Товар <b>'{product_data['name']}'</b> успешно добавлен с 1 фотографией!",
+                parse_mode='HTML',
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            self.manage_products(message)
+        
         else:
             # Если несколько фото, предлагаем выбрать главное
             self.states_manager.set_product_state(user_id, {
@@ -546,7 +665,7 @@ class ProductManagementHandler(BaseAdminHandler):
             
             self.bot.send_message(
                 message.chat.id,
-                f"📸 У вас несколько фотографий. Выберите <b>главное фото</b>:\n\n{photos_text}",
+                f"📸 У вас {len(photos)} фотографий. Выберите <b>главное фото</b>:\n\n{photos_text}",
                 parse_mode='HTML',
                 reply_markup=self._create_photo_selection_keyboard(photos)
             )
@@ -585,8 +704,8 @@ class ProductManagementHandler(BaseAdminHandler):
         valid_units = ['шт', 'кг', 'г', 'грамм', 'л', 'мл', 'уп', 'пачка', 'упаковка', 'набор', 'комплект']
 
         # Отладочная информация
-        self.logger.info(f"Выбрана единица измерения: {message.text}")
-        self.logger.info(f"Допустимые единицы: {valid_units}")
+        logger.info(f"Выбрана единица измерения: {message.text}")
+        logger.info(f"Допустимые единицы: {valid_units}")
         
         if message.text not in valid_units:
             self.bot.send_message(
@@ -600,7 +719,7 @@ class ProductManagementHandler(BaseAdminHandler):
         self.states_manager.update_product_data(user_id, product_data)
 
         # Отладочная информация
-        self.logger.info(f"Сохраненная единица измерения: {product_data['measurement_unit']}")
+        logger.info(f"Сохраненная единица измерения: {product_data['measurement_unit']}")
 
         self.states_manager.set_product_state(user_id, {
             'state': ProductState.WAITING_QUANTITY,  # 8. Количество
@@ -682,7 +801,7 @@ class ProductManagementHandler(BaseAdminHandler):
         product_data['prepayment_conditions'] = message.text
         self.states_manager.update_product_data(user_id, product_data)
         self.states_manager.set_product_state(user_id, {
-            'state': ProductState.CONFIRMATION,  # Переходим к подтверждению
+            'state': ProductState.CONFIRMATION,  # 9.1 Переходим к подтверждению
             'product_data': product_data
         })
         
@@ -703,8 +822,16 @@ class ProductManagementHandler(BaseAdminHandler):
         """Клавиатура для выбора фото"""
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
         
-        for i, photo in enumerate(photos, 1):
-            keyboard.add(types.KeyboardButton(f"{i}"))
+        # Добавляем кнопки с номерами фото
+        row = []
+        for i in range(1, len(photos) + 1):
+            row.append(types.KeyboardButton(f"{i}"))
+            if len(row) == 3:  # 3 кнопки в строке
+                keyboard.add(*row)
+                row = []
+        
+        if row:  # Добавляем оставшиеся кнопки
+            keyboard.add(*row)
         
         keyboard.add(types.KeyboardButton("❌ Отмена"))
         return keyboard
@@ -734,13 +861,17 @@ class ProductManagementHandler(BaseAdminHandler):
     
     def _save_photo(self, photo_file_id: str, product_id: int = None) -> str:
         """Сохранение фото на диск и возвращение пути"""
+        print(f'\n== _save_photo called with product_id: {product_id}\n')
         try:
             # Скачиваем фото
             file_info = self.bot.get_file(photo_file_id)
+            print(f'File info: {file_info.file_path}')
             downloaded_file = self.bot.download_file(file_info.file_path)
+            print(f'Downloaded file size: {len(downloaded_file)} bytes')
             
             # Создаем уникальное имя файла
             file_extension = os.path.splitext(file_info.file_path)[1] or '.jpg'
+            
             filename = f"{uuid.uuid4().hex}{file_extension}"
             
             # Всегда сохраняем в папку товара (product_id обязателен)
@@ -748,8 +879,10 @@ class ProductManagementHandler(BaseAdminHandler):
                 raise ValueError("product_id required for photo saving")
             
             product_dir = os.path.join(self.photos_dir, str(product_id))
+            print(f'Product directory: {product_dir}')
             os.makedirs(product_dir, exist_ok=True)
             filepath = os.path.join(product_dir, filename)
+            print(f'Full file path: {filepath}')
             
             # Сохраняем файл
             with open(filepath, 'wb') as new_file:
@@ -758,7 +891,7 @@ class ProductManagementHandler(BaseAdminHandler):
             return filepath
             
         except Exception as e:
-            self.logger.error(f"Ошибка при сохранении фото: {e}")
+            logger.error(f"Ошибка при сохранении фото: {e}")
             return None
     
     def _cleanup_temp_photos(self, temp_photos: list):
@@ -768,7 +901,7 @@ class ProductManagementHandler(BaseAdminHandler):
                 if os.path.exists(photo_path):
                     os.remove(photo_path)
             except Exception as e:
-                self.logger.error(f"Ошибка при удалении временного фото: {e}")
+                logger.error(f"Ошибка при удалении временного фото: {e}")
 
 
 #### !!!!
@@ -859,26 +992,23 @@ class ProductManagementHandler(BaseAdminHandler):
         keyboard.add(types.KeyboardButton("❌ Отмена"))
         
         return keyboard
-    
+        
     def _handle_product_confirmation(self, message: Message):
         """Обработка подтверждения сохранения товара"""
         user_id = message.from_user.id
-
-        # Отладочная информация
-        # print(f"Обработка подтверждения для пользователя {user_id}")
-        # print(f"Текст сообщения: {message.text}")
-        # print(f"Текущее состояние: {self.states_manager.get_product_state(user_id)}")
         
         if message.text == "✅ Сохранить":
             product_data = self.states_manager.get_product_data(user_id)
             
             # Сохраняем товар в базу данных (без фото)
             product_id = self.db_manager.add_product_returning_id(product_data)
+            print(f'{product_id = }')
             
             if product_id:
                 # Обновляем данные продукта с ID
                 product_data['id'] = product_id
                 self.states_manager.update_product_data(user_id, product_data)
+                print(f'{product_data = }')
                 
                 # Переходим к вопросу о фото
                 self.states_manager.set_product_state(user_id, {
@@ -965,7 +1095,7 @@ class ProductManagementHandler(BaseAdminHandler):
             return True
             
         except Exception as e:
-            self.logger.error(f"Ошибка при сохранении товара с фото: {e}")
+            logger.error(f"Ошибка при сохранении товара с фото: {e}")
             # Очищаем временные фото в случае ошибки
             if 'temp_photos' in product_data:
                 self._cleanup_temp_photos(product_data['temp_photos'])
@@ -1089,7 +1219,7 @@ class ProductManagementHandler(BaseAdminHandler):
                 description=category_data.get('description', '')
             )
         except Exception as e:
-            self.logger.error(f"Ошибка при сохранении категории: {e}")
+            logger.error(f"Ошибка при сохранении категории: {e}")
             return False
     
     def _cancel_category_creation(self, callback: CallbackQuery):
@@ -1107,9 +1237,802 @@ class ProductManagementHandler(BaseAdminHandler):
         # Возвращаемся к управлению продукцией
         self.manage_products(callback.message)
     
-    def _edit_products(self, message: Message):
-        """Редактирование товаров"""
-        self.bot.send_message(message.chat.id, "✏️ Функция редактирования товаров в разработке")
+    # ===== НОВЫЕ МЕТОДЫ ДЛЯ РЕДАКТИРОВАНИЯ =====
+
+    def _edit_products_start(self, callback: CallbackQuery):
+        """1. Начало редактирования - выбор категории"""
+        if not self._check_admin_access(callback=callback):
+            return
+        
+        categories = self.db_manager.get_all_categories()
+        
+        if not categories:
+            self.bot.send_message(
+                callback.message.chat.id,
+                "📭 Нет доступных категорий для редактирования.",
+                reply_markup=self._create_back_to_products_keyboard()
+            )
+            return
+        
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        
+        for category in categories:
+            keyboard.add(types.InlineKeyboardButton(
+                f"📁 {category['name']}",
+                callback_data=f"edit_category_{category['id']}"
+            ))
+        
+        keyboard.add(types.InlineKeyboardButton(
+            "🔙 Назад",
+            callback_data="product_edit_back"
+        ))
+        
+        try:
+            self.bot.edit_message_text(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+                text="📂 <b>Редактирование товаров</b>\n\nВыберите категорию:",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        except:
+            self.bot.send_message(
+                callback.message.chat.id,
+                "📂 <b>Редактирование товаров</b>\n\nВыберите категорию:",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        
+        self.bot.answer_callback_query(callback.id)
+
+    def _handle_edit_callbacks(self, callback: CallbackQuery):
+        """Обработка callback'ов редактирования"""
+        if not self._check_admin_access(callback=callback):
+            return
+        
+        try:
+            data = callback.data
+            
+            if data.startswith('edit_category_'):
+                # Выбор категории для редактирования
+                category_id = int(data.replace('edit_category_', ''))
+                self._show_products_for_editing(callback, category_id)
+                
+            elif data.startswith('edit_product_'):
+                # Выбор товара для редактирования
+                product_id = int(data.replace('edit_product_', ''))
+                self._show_edit_options(callback, product_id)
+                
+            elif data.startswith('edit_option_'):
+                # Выбор опции редактирования
+                parts = data.split('_')
+                if len(parts) >= 4:
+                    product_id = int(parts[2])
+                    option = '_'.join(parts[3:])  # Берем все части после product_id
+                    self._start_editing_option(callback, product_id, option)
+                else:
+                    self.bot.answer_callback_query(callback.id, "❌ Неверный формат callback")
+                
+            elif data == 'edit_back_to_categories':
+                # Назад к категориям
+                self._edit_products_start(callback)
+                
+            elif data == 'edit_back_to_products':
+                # Назад к товарам категории
+                user_state = self.states_manager.get_management_state(callback.from_user.id)
+                if user_state and 'category_id' in user_state:
+                    category_id = user_state.get('category_id')
+                    self._show_products_for_editing(callback, category_id)
+                else:
+                    # Если состояние не найдено, возвращаемся к выбору категории
+                    self._edit_products_start(callback)
+                
+            elif data == 'product_edit_back':
+                # Назад в меню продукции
+                self.manage_products(callback.message)
+
+            elif data.startswith('edit_delete_option_'):
+                # Переход к подтверждению удаления
+                product_id = int(data.replace('edit_delete_option_', ''))
+                print(f'Debug: Удаление продукта {product_id}')
+                self._show_delete_confirmation(callback, product_id)
+            
+            elif data.startswith('edit_delete_confirm_'):
+                # Подтверждение удаления товара
+                product_id = int(data.replace('edit_delete_confirm_', ''))
+                print(f"DEBUG: Delete confirmation received for product {product_id}")
+                self._delete_product(callback, product_id)
+                
+            elif data.startswith('edit_back_to_options_'):
+                # Возврат к опциям редактирования
+                product_id = int(data.replace('edit_back_to_options_', ''))
+                self._show_edit_options(callback, product_id)
+            
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка в edit callback: {e}", exc_info=True)
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка при обработке")
+
+    def _show_products_for_editing(self, callback: CallbackQuery, category_id: int):
+        """2. Показать товары категории для редактирования"""
+        products = self.db_manager.get_products_by_category(category_id)
+        
+        if not products:
+            self.bot.send_message(
+                callback.message.chat.id,
+                "📭 В этой категории нет товаров для редактирования.",
+                reply_markup=self._create_edit_back_keyboard()
+            )
+            return
+        
+        # Сохраняем category_id в состоянии для возврата
+        current_state = self.states_manager.get_management_state(callback.from_user.id) or {}
+        current_state.update({
+            'state': 'editing_category',
+            'category_id': category_id
+        })
+        self.states_manager.set_management_state(callback.from_user.id, current_state)
+        
+        # Получаем информацию о категории
+        categories = self.db_manager.get_all_categories()
+        category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), 'Неизвестно')
+        
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        
+        for product in products:
+            status_emoji = "✅" if product['is_available'] else "❌"
+            keyboard.add(types.InlineKeyboardButton(
+                f"{status_emoji} #{product['id']} {product['name']} - {product['price']} руб.",
+                callback_data=f"edit_product_{product['id']}"
+            ))
+        
+        keyboard.add(types.InlineKeyboardButton(
+            "🔙 Назад к категориям",
+            callback_data="edit_back_to_categories"
+        ))
+        
+        try:
+            self.bot.edit_message_text(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+                text=f"📦 <b>Товары в категории:</b> {category_name}\n\nВыберите товар для редактирования:",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        except:
+            self.bot.send_message(
+                callback.message.chat.id,
+                f"📦 <b>Товары в категории:</b> {category_name}\n\nВыберите товар для редактирования:",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+
+    def _show_edit_options(self, callback: CallbackQuery, product_id: int):
+        """3. Показать опции редактирования для товара"""
+        product = self.db_manager.get_product_by_id(product_id)
+        
+        if not product:
+            self.bot.answer_callback_query(callback.id, "❌ Товар не найден")
+            return
+        
+        # Сохраняем product_id в состоянии
+        self.states_manager.set_management_state(callback.from_user.id, {
+            'state': 'editing_product',
+            'product_id': product_id
+        })
+        
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        
+        # Основные опции
+        keyboard.add(
+            types.InlineKeyboardButton("✏️ Имя", callback_data=f"edit_option_{product_id}_name"),
+            types.InlineKeyboardButton("📁 Категория", callback_data=f"edit_option_{product_id}_category")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("📄 Описание", callback_data=f"edit_option_{product_id}_description"),
+            types.InlineKeyboardButton("📏 Единица", callback_data=f"edit_option_{product_id}_unit")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("⚖️ Количество", callback_data=f"edit_option_{product_id}_quantity"),
+            types.InlineKeyboardButton("💰 Цена", callback_data=f"edit_option_{product_id}_price")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("💳 Оплата", callback_data=f"edit_option_{product_id}_prepayment"),
+            types.InlineKeyboardButton("🔄 Доступность", callback_data=f"edit_option_{product_id}_availability")
+        )
+        
+        # Фото опции
+        keyboard.add(
+            types.InlineKeyboardButton("📸 Добавить фото", callback_data=f"edit_option_{product_id}_add_photo"),
+            types.InlineKeyboardButton("🖼️ Выбрать основное", callback_data=f"edit_option_{product_id}_main_photo")
+        )
+        
+        keyboard.add(
+            types.InlineKeyboardButton("🗑️ Удалить товар", callback_data=f"edit_delete_option_{product_id}"),
+            types.InlineKeyboardButton("🔙 Назад к товарам", callback_data="edit_back_to_products")
+        )
+        
+        
+        photos = self.db_manager.get_product_photos(product['id'])
+        if photos:
+            main_photos = [p for p in photos if p['is_main']]
+            text_photos = f"📸 <b>Фотографии:</b> {len(photos)} шт.\n"
+            # if main_photos:
+            #     text_photos = f"📌 <b>Основное фото:</b> Установлено\n"
+        else:
+            text_photos = "📸 <b>Фотографии:</b> Нет\n"
+        
+        
+        product_info = f"🎂 <b>Редактирование товара</b>\n\n"
+        product_info += f"🆔 <b>ID:</b> {product['id']}\n"
+        product_info += f"📝 <b>Название:</b> {product['name']}\n"
+        product_info += f"📁 <b>Категория:</b> {product['category_name']}\n"
+        product_info += text_photos
+        product_info += f"📄 <b>Описание:</b> {product['short_description'] or 'Не указано'}\n"
+        product_info += f"🔄 <b>Доступен:</b> {'✅ Да' if product['is_available'] else '❌ Нет'}\n"
+        product_info += f"📏 <b>Единица измерения:</b> {product['measurement_unit']}\n"
+        product_info += f"⚖️ <b>Количество:</b> {product['quantity']}\n"
+        product_info += f"💰 <b>Цена:</b> {product['price']} руб.\n"
+        product_info += f"💳 <b>Условия оплаты:</b> {product['prepayment_conditions'] or 'Не указано'}\n"
+        product_info += "Выберите что хотите изменить:"
+        
+        try:
+            self.bot.edit_message_text(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+                text=product_info,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        except:
+            self.bot.send_message(
+                callback.message.chat.id,
+                product_info,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+
+    def _show_edit_options_after_cancel(self, callback: CallbackQuery, product_id: int):
+        """Вернуться к опциям редактирования после отмены удаления"""
+        try:
+            product = self.db_manager.get_product_by_id(product_id)
+            
+            if not product:
+                self.bot.answer_callback_query(callback.id, "❌ Товар не найден")
+                return
+            
+            # Показываем опции редактирования (аналогично _show_edit_options)
+            self._show_edit_options(callback, product_id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к опциям редактирования: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
+    def _start_editing_option(self, callback: CallbackQuery, product_id: int, option: str):
+        """Начать редактирование конкретной опции"""
+        product = self.db_manager.get_product_by_id(product_id)
+        
+        if not product:
+            self.bot.answer_callback_query(callback.id, "❌ Товар не найден")
+            return
+        
+        # Сохраняем состояние редактирования
+        self.states_manager.set_management_state(callback.from_user.id, {
+            'state': f'editing_{option}',
+            'product_id': product_id
+        })
+        
+        messages = {
+            'name': "✏️ Введите новое название товара:",
+            'category': "📁 Выберите новую категорию:",
+            'description': "📄 Введите новое описание товара:",
+            'unit': "📏 Выберите новую единицу измерения:",
+            'quantity': "⚖️ Введите новое количество товара:",
+            'price': "💰 Введите новую цену товара:",
+            'prepayment': "💳 Выберите новые условия оплаты:",
+            'availability': "🔄 Товар доступен для заказа?",
+            'add_photo': "📸 Отправьте новое фото товара:",
+            'main_photo': "🖼️ Выберите основное фото:",
+            'delete': "🗑️ Вы действительно хотите удалить товар?"
+        }
+        
+        if option in ['category', 'unit', 'availability', 'prepayment']:
+            # Для этих опций показываем клавиатуру
+            if option == 'category':
+                keyboard = self._create_categories_keyboard()
+            elif option == 'unit':
+                keyboard = self._create_measurement_units_keyboard()
+            elif option == 'availability':
+                keyboard = self._create_availability_keyboard()
+            elif option == 'prepayment':
+                keyboard = self._create_prepayment_keyboard()
+            
+            self.bot.send_message(
+                callback.message.chat.id,
+                messages[option],
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        elif option in ['add_photo', 'main_photo']:
+            # Для работы с фото
+            if option == 'main_photo':
+                # Показываем список фото для выбора основного
+                photos = self.db_manager.get_product_photos(product_id)
+                if not photos:
+                    self.bot.send_message(callback.message.chat.id, "❌ У товара нет фотографий")
+                    self._return_to_edit_options(callback.message, product_id)
+                    return
+                
+                photos_text = "\n".join([f"{i}. 📸 Фото {i}" for i in range(1, len(photos) + 1)])
+                self.bot.send_message(
+                    callback.message.chat.id,
+                    f"📸 Выберите <b>главное фото</b>:\n\n{photos_text}",
+                    parse_mode='HTML',
+                    reply_markup=self._create_photo_selection_keyboard(photos)
+                )
+            else:
+                # Для добавления фото
+                self.bot.send_message(
+                    callback.message.chat.id,
+                    messages[option],
+                    parse_mode='HTML',
+                    reply_markup=self._create_cancel_edit_keyboard()
+                )
+        elif option == 'delete':
+            # Показываем подтверждение удаления
+            self._show_delete_confirmation(callback, product_id)
+            return
+        else:
+            # Для текстовых опций
+            self.bot.send_message(
+                callback.message.chat.id,
+                messages[option],
+                parse_mode='HTML',
+                reply_markup=self._create_cancel_edit_keyboard()
+            )
+
+    def _handle_edit_states(self, message: Message):
+        """Обработка состояний редактирования"""
+        user_id = message.from_user.id
+        user_state = self.states_manager.get_management_state(user_id)
+        
+        if not user_state:
+            return
+        
+        state = user_state.get('state')
+        product_id = user_state.get('product_id')
+        
+        if not product_id:
+            self.bot.send_message(message.chat.id, "❌ Ошибка: товар не найден")
+            return
+        
+        try:
+            if state == 'editing_name':
+                self._update_product_name(message, product_id)
+                
+            elif state == 'editing_description':
+                self._update_product_description(message, product_id)
+                
+            elif state == 'editing_quantity':
+                self._update_product_quantity(message, product_id)
+                
+            elif state == 'editing_price':
+                self._update_product_price(message, product_id)
+                
+            elif state == 'editing_category':
+                self._update_product_category(message, product_id)
+                
+            elif state == 'editing_unit':
+                self._update_product_unit(message, product_id)
+                
+            elif state == 'editing_prepayment':
+                self._update_product_prepayment(message, product_id)
+                
+            elif state == 'editing_availability':
+                self._update_product_availability(message, product_id)
+                
+            elif state == 'editing_add_photo':
+                self._add_product_photo(message, product_id)
+                
+            elif state == 'editing_main_photo':
+                self._select_main_photo(message, product_id)
+                
+        except Exception as e:
+            logger.error(f"Ошибка при редактировании: {e}")
+            self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении товара")
+
+    def _update_product_name(self, message: Message, product_id: int):
+        """Обновление названия товара"""
+        new_name = message.text
+        logger.info(f"Попытка обновления названия товара {product_id} на: {new_name}")
+        
+        if self.db_manager.update_product_field(product_id, 'name', new_name):
+            logger.info(f"Название товара {product_id} успешно обновлено")
+            
+            self.states_manager.clear_management_state(message.from_user.id)
+            self.bot.send_message(message.chat.id, "✅ Название товара обновлено!")
+            self._return_to_edit_options(message, product_id)
+        else:
+            logger.error(f"Ошибка при обновлении названия товара {product_id}")
+            self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении названия")
+
+
+    def _update_product_description(self, message: Message, product_id: int):
+        """Обновление описания товара"""
+        new_description = message.text
+        if self.db_manager.update_product_field(product_id, 'short_description', new_description):
+            self.states_manager.clear_management_state(message.from_user.id)
+            self.bot.send_message(message.chat.id, "✅ Описание товара обновлено!")
+            self._return_to_edit_options(message, product_id)
+        else:
+            self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении описания")
+
+    def _update_product_quantity(self, message: Message, product_id: int):
+        """Обновление количества товара"""
+        try:
+            new_quantity = float(message.text)
+            if self.db_manager.update_product_field(product_id, 'quantity', new_quantity):
+                self.states_manager.clear_management_state(message.from_user.id)
+                self.bot.send_message(message.chat.id, "✅ Количество товара обновлено!")
+                self._return_to_edit_options(message, product_id)
+            else:
+                self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении количества")
+        except ValueError:
+            self.bot.send_message(message.chat.id, "❌ Введите число для количества")
+
+    def _update_product_price(self, message: Message, product_id: int):
+        """Обновление цены товара"""
+        try:
+            new_price = float(message.text)
+            if self.db_manager.update_product_field(product_id, 'price', new_price):
+                self.states_manager.clear_management_state(message.from_user.id)
+                self.bot.send_message(message.chat.id, "✅ Цена товара обновлена!")
+                self._return_to_edit_options(message, product_id)
+            else:
+                self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении цены")
+        except ValueError:
+            self.bot.send_message(message.chat.id, "❌ Введите число для цены")
+
+    def _update_product_category(self, message: Message, product_id: int):
+        """Обновление категории товара"""
+        categories = self.db_manager.get_all_categories()
+        category_names = [cat['name'].lower() for cat in categories]
+        
+        if message.text.lower() not in category_names:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Категория не найдена. Выберите из предложенных:",
+                reply_markup=self._create_categories_keyboard()
+            )
+            return
+        
+        category_id = next((cat['id'] for cat in categories if cat['name'].lower() == message.text.lower()), None)
+        
+        if category_id and self.db_manager.update_product_field(product_id, 'category_id', category_id):
+            self.states_manager.clear_management_state(message.from_user.id)
+            self.bot.send_message(message.chat.id, "✅ Категория товара обновлена!")
+            self._return_to_edit_options(message, product_id)
+        else:
+            self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении категории")
+
+    def _update_product_unit(self, message: Message, product_id: int):
+        """Обновление единицы измерения"""
+        valid_units = ['шт', 'кг', 'г', 'грамм', 'л', 'мл', 'уп', 'пачка', 'упаковка', 'набор', 'комплект']
+        
+        if message.text not in valid_units:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Пожалуйста, выберите единицу измерения из предложенных:",
+                reply_markup=self._create_measurement_units_keyboard()
+            )
+            return
+        
+        if self.db_manager.update_product_field(product_id, 'measurement_unit', message.text):
+            self.states_manager.clear_management_state(message.from_user.id)
+            self.bot.send_message(message.chat.id, "✅ Единица измерения обновлена!")
+            self._return_to_edit_options(message, product_id)
+        else:
+            self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении единицы измерения")
+
+    def _update_product_prepayment(self, message: Message, product_id: int):
+        """Обновление условий оплаты"""
+        valid_options = ["50% предоплата", "100% предоплата", "Постоплата"]
+        
+        if message.text not in valid_options:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Пожалуйста, выберите вариант из предложенных:",
+                reply_markup=self._create_prepayment_keyboard()
+            )
+            return
+        
+        if self.db_manager.update_product_field(product_id, 'prepayment_conditions', message.text):
+            self.states_manager.clear_management_state(message.from_user.id)
+            self.bot.send_message(message.chat.id, "✅ Условия оплаты обновлены!")
+            self._return_to_edit_options(message, product_id)
+        else:
+            self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении условий оплаты")
+
+    def _update_product_availability(self, message: Message, product_id: int):
+        """Обновление доступности товара"""
+        if message.text == "✅ Да":
+            new_availability = True
+        elif message.text == "❌ Нет":
+            new_availability = False
+        else:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Пожалуйста, выберите вариант:",
+                reply_markup=self._create_availability_keyboard()
+            )
+            return
+        
+        if self.db_manager.update_product_field(product_id, 'is_available', new_availability):
+            self.states_manager.clear_management_state(message.from_user.id)
+            status = "доступен" if new_availability else "не доступен"
+            self.bot.send_message(message.chat.id, f"✅ Товар теперь {status} для заказа!")
+            self._return_to_edit_options(message, product_id)
+        else:
+            self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении доступности")
+
+    def _add_product_photo(self, message: Message, product_id: int):
+        """Добавление фото к товару"""
+        if message.content_type != 'photo':
+            self.bot.send_message(message.chat.id, "❌ Пожалуйста, отправьте фото")
+            return
+        
+        try:
+            photo_id = message.photo[-1].file_id
+            photo_path = self._save_photo(photo_id, product_id)
+            
+            if photo_path and self.db_manager.add_product_photo(product_id, photo_path, is_main=False):
+                self.bot.send_message(message.chat.id, "✅ Фото добавлено к товару!")
+                self._return_to_edit_options(message, product_id)
+            else:
+                self.bot.send_message(message.chat.id, "❌ Ошибка при добавлении фото")
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении фото: {e}")
+            self.bot.send_message(message.chat.id, "❌ Ошибка при обработке фото")
+
+    def _select_main_photo(self, message: Message, product_id: int):
+        """Выбор основного фото"""
+        photos = self.db_manager.get_product_photos(product_id)
+        
+        if not photos:
+            self.bot.send_message(message.chat.id, "❌ У товара нет фотографий")
+            self._return_to_edit_options(message, product_id)
+            return
+        
+        try:
+            photo_number = int(message.text)
+            if 1 <= photo_number <= len(photos):
+                selected_photo = photos[photo_number - 1]
+                
+                # Устанавливаем выбранное фото как основное
+                if self.db_manager.set_main_photo(product_id, selected_photo['photo_path']):
+                    self.bot.send_message(message.chat.id, "✅ Основное фото установлено!")
+                    self._return_to_edit_options(message, product_id)
+                else:
+                    self.bot.send_message(message.chat.id, "❌ Ошибка при установке основного фото")
+            else:
+                self.bot.send_message(
+                    message.chat.id,
+                    f"❌ Неверный номер. Введите число от 1 до {len(photos)}:",
+                    reply_markup=self._create_photo_selection_keyboard(photos)
+                )
+        except ValueError:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Пожалуйста, введите номер фото:",
+                reply_markup=self._create_photo_selection_keyboard(photos)
+            )
+
+    def _return_to_edit_options(self, message: Message, product_id: int):
+        """Вернуться к опциям редактирования после изменения"""
+        # Очищаем состояние редактирования
+        self.states_manager.clear_management_state(message.from_user.id)
+        
+        # Получаем информацию о товаре для показа опций
+        product = self.db_manager.get_product_by_id(product_id)
+        
+        if not product:
+            self.bot.send_message(message.chat.id, "❌ Товар не найден")
+            self.manage_products(message)
+            return
+        
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        
+        # Основные опции
+        keyboard.add(
+            types.InlineKeyboardButton("✏️ Имя", callback_data=f"edit_option_{product_id}_name"),
+            types.InlineKeyboardButton("📁 Категория", callback_data=f"edit_option_{product_id}_category")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("📄 Описание", callback_data=f"edit_option_{product_id}_description"),
+            types.InlineKeyboardButton("📏 Единица", callback_data=f"edit_option_{product_id}_unit")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("⚖️ Количество", callback_data=f"edit_option_{product_id}_quantity"),
+            types.InlineKeyboardButton("💰 Цена", callback_data=f"edit_option_{product_id}_price")
+        )
+        keyboard.add(
+            types.InlineKeyboardButton("💳 Оплата", callback_data=f"edit_option_{product_id}_prepayment"),
+            types.InlineKeyboardButton("🔄 Доступность", callback_data=f"edit_option_{product_id}_availability")
+        )
+        
+        # Фото опции
+        keyboard.add(
+            types.InlineKeyboardButton("📸 Добавить фото", callback_data=f"edit_option_{product_id}_add_photo"),
+            types.InlineKeyboardButton("🖼️ Выбрать основное", callback_data=f"edit_option_{product_id}_main_photo")
+        )
+        
+        keyboard.add(types.InlineKeyboardButton(
+            "🔙 Назад к товарам",
+            callback_data="edit_back_to_products"
+        ))
+        
+        photos = self.db_manager.get_product_photos(product['id'])
+        if photos:
+            main_photos = [p for p in photos if p['is_main']]
+            text_photos = f"📸 <b>Фотографии:</b> {len(photos)} шт.\n"
+            # if main_photos:
+            #     text_photos = f"📌 <b>Основное фото:</b> Установлено\n"
+        else:
+            text_photos = "📸 <b>Фотографии:</b> Нет\n"
+        
+        
+        product_info = f"🎂 <b>Редактирование товара</b>\n\n"
+        product_info += f"🆔 <b>ID:</b> {product['id']}\n"
+        product_info += f"📝 <b>Название:</b> {product['name']}\n"
+        product_info += f"📁 <b>Категория:</b> {product['category_name']}\n"
+        product_info += text_photos
+        product_info += f"📄 <b>Описание:</b> {product['short_description'] or 'Не указано'}\n"
+        product_info += f"🔄 <b>Доступен:</b> {'✅ Да' if product['is_available'] else '❌ Нет'}\n"
+        product_info += f"📏 <b>Единица измерения:</b> {product['measurement_unit']}\n"
+        product_info += f"⚖️ <b>Количество:</b> {product['quantity']}\n"
+        product_info += f"💰 <b>Цена:</b> {product['price']} руб.\n"
+        product_info += f"💳 <b>Условия оплаты:</b> {product['prepayment_conditions'] or 'Не указано'}\n"
+        product_info += "Выберите что хотите изменить:"
+        
+        self.bot.send_message(
+            message.chat.id,
+            product_info,
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+
+    def _create_prepayment_keyboard(self):
+        """Клавиатура для выбора оплаты"""
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        keyboard.add(types.KeyboardButton("50% предоплата"))
+        keyboard.add(types.KeyboardButton("100% предоплата"))
+        keyboard.add(types.KeyboardButton("Постоплата"))
+        keyboard.add(types.KeyboardButton("❌ Отмена редактирования"))
+        return keyboard
+
+    def _create_cancel_edit_keyboard(self):
+        """Клавиатура для отмены редактирования"""
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        keyboard.add(types.KeyboardButton("❌ Отмена редактирования"))
+        return keyboard
+
+    def _create_edit_back_keyboard(self):
+        """Клавиатура для возврата при редактировании"""
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(
+            "🔙 Назад",
+            callback_data="edit_back_to_categories"
+        ))
+        return keyboard
+    
+    def _show_delete_confirmation(self, callback: CallbackQuery, product_id: int):
+        """Показать подтверждение удаления товара"""
+        product = self.db_manager.get_product_by_id(product_id)
+        print(f' == Подтверждение удаления продукта ==')
+        
+        if not product:
+            self.bot.answer_callback_query(callback.id, "❌ Товар не найден")
+            return
+        
+        # Форматируем информацию о товаре
+        product_text = self._format_product_details(product)
+        
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            types.InlineKeyboardButton("✅ Да, удалить", callback_data=f"edit_delete_confirm_{product_id}"),
+            types.InlineKeyboardButton("❌ Нет, отменить", callback_data=f"edit_back_to_options_{product_id}")
+        )
+        
+        try:
+            self.bot.edit_message_text(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+                text=f"🗑️ <b>Подтверждение удаления товара</b>\n\n{product_text}\n\n"
+                    "Вы действительно хотите удалить этот товар?",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        except:
+            self.bot.send_message(
+                callback.message.chat.id,
+                f"🗑️ <b>Подтверждение удаления товара</b>\n\n{product_text}\n\n"
+                "Вы действительно хотите удалить этот товар?",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        
+    def _delete_product(self, callback: CallbackQuery, product_id: int):
+        """Удаление товара"""
+        print(f"DEBUG: Starting deletion of product {product_id}")
+        try:
+            # Получаем информацию о товаре перед удалением
+            product = self.db_manager.get_product_by_id(product_id)
+            
+            if not product:
+                print(f"DEBUG: Product {product_id} not found")
+                self.bot.answer_callback_query(callback.id, "❌ Товар не найден")
+                return
+            
+            print(f"DEBUG: Product found: {product['name']}")
+            
+            # 1. Удаляем фотографии товара с диска
+            photos = self.db_manager.get_product_photos(product_id)
+            print(f"DEBUG: Found {len(photos)} photos to delete")
+            for photo in photos:
+                try:
+                    if os.path.exists(photo['photo_path']):
+                        os.remove(photo['photo_path'])
+                        print(f"DEBUG: Deleted photo: {photo['photo_path']}")
+                except Exception as e:
+                    logger.error(f"Ошибка при удалении фото: {e}")
+            
+            # 2. Удаляем папку товара
+            product_dir = os.path.join(self.photos_dir, str(product_id))
+            try:
+                if os.path.exists(product_dir):
+                    import shutil
+                    shutil.rmtree(product_dir)
+                    print(f"DEBUG: Deleted product directory: {product_dir}")
+            except Exception as e:
+                logger.error(f"Ошибка при удалении папки товара: {e}")
+            
+            # 3. Удаляем товар из базы данных
+            if self.db_manager.delete_product(product_id):
+                print(f"DEBUG: Product {product_id} deleted from database")
+                
+                # Удаляем сообщение с подтверждением
+                try:
+                    self.bot.delete_message(callback.message.chat.id, callback.message.message_id)
+                except:
+                    pass
+                    
+                # Отправляем подтверждение удаления
+                self.bot.send_message(
+                    callback.message.chat.id,
+                    f"✅ Товар '{product['name']}' успешно удален!"
+                )
+                
+                # Возвращаемся к списку товаров категории
+                user_state = self.states_manager.get_management_state(callback.from_user.id)
+                if user_state and 'category_id' in user_state:
+                    category_id = user_state.get('category_id')
+                    self._show_products_for_editing(callback, category_id)
+                else:
+                    self._edit_products_start(callback)
+            else:
+                print(f"DEBUG: Failed to delete product {product_id} from database")
+                self.bot.answer_callback_query(callback.id, "❌ Ошибка при удалении из базы данных")
+                        
+        except Exception as e:
+            logger.error(f"Ошибка при удалении товара: {e}")
+            import traceback
+            traceback.print_exc()
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка при удалении")                   
+
+    # ===== КОНЕЦ НОВЫХ МЕТОДОВ ДЛЯ РЕДАКТИРОВАНИЯ =====
+
+    # ===== методы для просмотра =====
     
     def _view_products(self, message: Message):
         """Просмотр товаров - выбор категории"""
@@ -1193,7 +2116,7 @@ class ProductManagementHandler(BaseAdminHandler):
             self.bot.answer_callback_query(callback.id)
             
         except Exception as e:
-            self.logger.error(f"Ошибка при просмотре категории: {e}")
+            logger.error(f"Ошибка при просмотре категории: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при загрузке")
 
     def _handle_view_product(self, callback: CallbackQuery):
@@ -1238,7 +2161,7 @@ class ProductManagementHandler(BaseAdminHandler):
                             reply_markup=keyboard
                         )
                 except Exception as e:
-                    self.logger.error(f"Ошибка отправки фото: {e}")
+                    logger.error(f"Ошибка отправки фото: {e}")
                     self.bot.send_message(
                         callback.message.chat.id,
                         product_text,
@@ -1271,12 +2194,12 @@ class ProductManagementHandler(BaseAdminHandler):
                                 media_group
                             )
                         except Exception as e:
-                            self.logger.error(f"Ошибка отправки медиагруппы: {e}")
+                            logger.error(f"Ошибка отправки медиагруппы: {e}")
             
             self.bot.answer_callback_query(callback.id)
             
         except Exception as e:
-            self.logger.error(f"Ошибка при просмотре товара: {e}")
+            logger.error(f"Ошибка при просмотре товара: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при загрузке")
 
     def _handle_view_back(self, callback: CallbackQuery):
@@ -1303,7 +2226,7 @@ class ProductManagementHandler(BaseAdminHandler):
             self.bot.answer_callback_query(callback.id)
             
         except Exception as e:
-            self.logger.error(f"Ошибка при обработке назад: {e}")
+            logger.error(f"Ошибка при обработке назад: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка")
 
     def _show_products_in_category(self, message: Message, category_id: int):
@@ -1360,6 +2283,8 @@ class ProductManagementHandler(BaseAdminHandler):
         
         return text
 
+    # ===== КОНЕЦ МЕТОДОВ ДЛЯ просмотра =====
+    
     def _create_back_to_products_keyboard(self):
         """Клавиатура для возврата к управлению продукцией"""
         keyboard = types.InlineKeyboardMarkup()

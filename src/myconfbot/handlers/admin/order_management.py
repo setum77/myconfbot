@@ -1,9 +1,11 @@
 import logging
+logger = logging.getLogger(__name__)
+
 from telebot import types
 from telebot.types import Message, CallbackQuery
 
 from .admin_base import BaseAdminHandler
-from src.myconfbot.models import OrderStatus
+from src.myconfbot.utils.models import OrderStatus
 
 
 class OrderManagementHandler(BaseAdminHandler):
@@ -11,7 +13,6 @@ class OrderManagementHandler(BaseAdminHandler):
     
     def __init__(self, bot, config, db_manager):
         super().__init__(bot, config, db_manager)
-        self.logger = logging.getLogger(__name__)
     
     def register_handlers(self):
         """Регистрация обработчиков управления заказами"""
@@ -75,4 +76,4 @@ class OrderManagementHandler(BaseAdminHandler):
                 
         except Exception as e:
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при обновлении")
-            self.logger.error(f"Ошибка изменения статуса: {e}", exc_info=True)
+            logger.error(f"Ошибка изменения статуса: {e}", exc_info=True)

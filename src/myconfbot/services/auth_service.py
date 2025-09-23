@@ -1,6 +1,6 @@
 from typing import Optional, Dict   
 from src.myconfbot.utils.database import DatabaseManager
-from src.myconfbot.models import User
+from src.myconfbot.utils.models import User
 
 class AuthService:
     """Сервис для работы с аутентификацией и правами"""

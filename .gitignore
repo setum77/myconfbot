@@ -26,3 +26,4 @@ bot.db
 
 # Временные файлы и примеры
 *example.py
+src/myconfbot/models_old/

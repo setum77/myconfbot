@@ -1,6 +1,8 @@
+import logging
+logger = logging.getLogger(__name__)
+
 import os
 import telebot
-import logging
 from telebot import types
 from telebot.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from src.myconfbot.config import Config
