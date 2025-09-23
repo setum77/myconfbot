@@ -27,3 +27,6 @@ bot.db
 # Временные файлы и примеры
 *example.py
 src/myconfbot/models_old/
+src/myconfbot/handlers/admin_handlers_old.py
+src/myconfbot/handlers/base_handler_old.py
+

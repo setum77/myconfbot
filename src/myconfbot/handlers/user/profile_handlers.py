@@ -31,7 +31,11 @@ class ProfileHandler(BaseUserHandler):
     
     def _register_photo_handlers(self):
         """Регистрация обработчиков фото"""
-        @self.bot.message_handler(content_types=['photo'])
+        @self.bot.message_handler(
+            content_types=['photo'],
+            func=lambda message: self.states_manager.get_user_state(message.from_user.id) is not None and
+            self.states_manager.get_user_state(message.from_user.id).get('state', '') == 'editing_photo'
+        )
         def handle_profile_photo(message: Message):
             self._handle_profile_photo(message)
     
@@ -122,7 +126,8 @@ class ProfileHandler(BaseUserHandler):
         # Устанавливаем состояние редактирования
         self.states_manager.set_user_state(user_id, {
             'state': f'editing_{action}',
-            'message_id': callback.message.message_id
+            'message_id': callback.message.message_id,
+            'action': action
         })
         
         if action == 'name':

@@ -35,13 +35,13 @@ class StatesManager:
     # Методы для управления товарами
     def set_product_state(self, user_id: int, state_data: dict):
         """Установить состояние для добавления товара"""
-        print(f"DEBUG: Установка состояния для user_id={user_id}: {state_data}")
+        #print(f"DEBUG: Установка состояния для user_id={user_id}: {state_data}")
         self.product_states[user_id] = state_data
     
     def get_product_state(self, user_id: int) -> str:
         """Получить состояние добавления товара"""
         state_data = self.product_states.get(user_id)
-        print(f"DEBUG: Получение состояния для user_id={user_id}: {state_data}")
+        #print(f"DEBUG: Получение состояния для user_id={user_id}: {state_data}")
         return state_data.get('state') if state_data else None
     
     def get_product_data(self, user_id: int) -> dict:

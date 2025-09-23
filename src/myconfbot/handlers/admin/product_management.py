@@ -76,7 +76,6 @@ class ProductManagementHandler(BaseAdminHandler):
         @self.bot.message_handler(
             content_types=['photo'],
             func=lambda message: (
-                print(f"DEBUG: Checking additional photos condition for user {message.from_user.id}") or
                 self.states_manager.get_product_state(message.from_user.id) == ProductState.WAITING_ADDITIONAL_PHOTOS
             )
         )
@@ -84,29 +83,6 @@ class ProductManagementHandler(BaseAdminHandler):
             print("DEBUG: Additional photos handler triggered!")
             self._handle_additional_photos(message)
 
-        # # 12.1 Дополнительные фото - УПРОЩЕННАЯ ВЕРСИЯ
-        # @self.bot.message_handler(content_types=['photo'])
-        # def handle_additional_photos(message: Message):
-        #     user_id = message.from_user.id
-        #     current_state = self.states_manager.get_product_state(user_id)
-            
-        #     # Проверяем состояние в теле функции, а не в декораторе
-        #     if current_state == ProductState.WAITING_ADDITIONAL_PHOTOS:
-        #         print("DEBUG: Additional photos handler triggered!")
-        #         self._handle_additional_photos(message)
-        #     else:
-        #         print(f"DEBUG: Photo received but state is {current_state}, not WAITING_ADDITIONAL_PHOTOS")
-
-        # # 12.2 Дополнительные фото (кнопка "Готово")
-        # @self.bot.message_handler(
-        #     func=lambda message: (
-        #         self.states_manager.get_product_state(message.from_user.id) == ProductState.WAITING_ADDITIONAL_PHOTOS and
-        #         message.text == "✅ Готово"
-        #     )
-        # )
-        # def handle_photos_done(message: Message):
-        #     print("DEBUG: Photos done handler called!")
-        #     self._handle_photos_done(message)
 
         # 12.2 Дополнительные фото (кнопка "Готово")
         @self.bot.message_handler(func=lambda message: message.text == "✅ Готово")
@@ -1259,7 +1235,7 @@ class ProductManagementHandler(BaseAdminHandler):
         for category in categories:
             keyboard.add(types.InlineKeyboardButton(
                 f"📁 {category['name']}",
-                callback_data=f"edit_category_{category['id']}"
+                callback_data=f"select_category_{category['id']}"
             ))
         
         keyboard.add(types.InlineKeyboardButton(
@@ -1293,9 +1269,9 @@ class ProductManagementHandler(BaseAdminHandler):
         try:
             data = callback.data
             
-            if data.startswith('edit_category_'):
+            if data.startswith('select_category_'):
                 # Выбор категории для редактирования
-                category_id = int(data.replace('edit_category_', ''))
+                category_id = int(data.replace('select_category_', ''))
                 self._show_products_for_editing(callback, category_id)
                 
             elif data.startswith('edit_product_'):
