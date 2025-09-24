@@ -467,25 +467,6 @@ class DatabaseManager:
     
     # --- Методы для работы с продукцийе и категориями ---
 
-    def get_all_categories(self) -> List[dict]:
-        """Получить все категории"""
-        try:
-            session = self._Session()
-            categories = session.query(Category).order_by(Category.name).all()
-            return [
-                {
-                    'id': category.id,
-                    'name': category.name,
-                    'description': category.description
-                }
-                for category in categories
-            ]
-        except Exception as e:
-            logger.error(f"Ошибка при получении категорий: {e}")
-            return []
-        finally:
-            session.close()
-
     def add_product(self, product_data: dict) -> bool:
         """Добавить новый товар"""
         try:
@@ -512,6 +493,8 @@ class DatabaseManager:
         finally:
             session.close()
 
+    # -- НАЧАЛО УПРАВЛЕНИЕ КАТЕГОРИЯМИ
+    
     def add_category(self, name: str, description: str = '') -> bool:
         """Добавить новую категорию"""
         try:
@@ -537,6 +520,155 @@ class DatabaseManager:
             return False
         finally:
             session.close()
+
+    # def add_category(self, name: str, description: str = "") -> bool:
+    #     """Добавить категорию"""
+    #     try:
+    #         self.cursor.execute(
+    #             "INSERT INTO categories (name, description) VALUES (?, ?)",
+    #             (name, description)
+    #         )
+    #         self.conn.commit()
+    #         return True
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при добавлении категории: {e}")
+    #         return False
+
+    # def get_category_by_id(self, category_id: int) -> Optional[dict]:
+    #     """Получить категорию по ID"""
+    #     try:
+    #         return self.session.query(Category).filter(Category.id == category_id).first()
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении категории {category_id}: {e}")
+    #         return None
+    
+    def get_category_by_id(self, category_id: int) -> Optional[dict]:
+        """Получить категорию по ID"""
+        try:
+            with self.session_scope() as session:
+                category = session.query(Category).filter_by(id=category_id).first()
+                if category:
+                    return {
+                        'id': category.id,
+                        'name': category.name,
+                        'description': category.description,
+                        'created_at': category.created_at,
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"Ошибка при получении товара: {e}")
+            return None
+    
+    # def get_category_by_id(self, category_id: int) -> Optional[dict]:
+    #     """Получить категорию по ID"""
+    #     try:
+    #         self.cursor.execute("SELECT * FROM categories WHERE id = ?", (category_id,))
+    #         result = self.cursor.fetchone()
+    #         return dict(result) if result else None
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении категории по ID {category_id}: {e}")
+    #         return None
+
+    # def get_all_categories(self):
+    #     """Получить все категории"""
+    #     try:
+    #         return self.session.query(Category).order_by(Category.name).all()
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении категорий: {e}")
+    #         return []
+
+    def get_all_categories(self) -> List[dict]:
+        """Получить все категории"""
+        try:
+            session = self._Session()
+            categories = session.query(Category).order_by(Category.name).all()
+            return [
+                {
+                    'id': category.id,
+                    'name': category.name,
+                    'description': category.description
+                }
+                for category in categories
+            ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении категорий: {e}")
+            return []
+        finally:
+            session.close()
+
+    # def get_all_categories(self) -> List[dict]:
+    #     """Получить все категории"""
+    #     try:
+    #         self.cursor.execute("SELECT * FROM categories ORDER BY name")
+    #         results = self.cursor.fetchall()
+    #         return [dict(row) for row in results]
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении категорий: {e}")
+    #         return []
+
+    # def update_category_name(self, category_id: int, new_name: str) -> bool:
+    #     """Обновить название категории"""
+    #     try:
+    #         category = self._get_category_by_id(category_id)
+    #         if category:
+    #             category.name = new_name
+    #             self.session.commit()
+    #             return True
+    #         return False
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при обновлении названия категории {category_id}: {e}")
+    #         self.session.rollback()
+    #         return False
+
+    # def update_category_description(self, category_id: int, new_description: str) -> bool:
+    #     """Обновить описание категории"""
+    #     try:
+    #         category = self._get_category_by_id(category_id)
+    #         if category:
+    #             category.description = new_description
+    #             self.session.commit()
+    #             return True
+    #         return False
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при обновлении описания категории {category_id}: {e}")
+    #         self.session.rollback()
+    #         return False
+
+    def update_category_field(self, category_id: int, field: str, value: str) -> bool:
+        """Обновление поля категории"""
+        try:
+            with self.session_scope() as session:
+                category = session.query(Category).filter_by(id=category_id).first()
+                if category:
+                    if hasattr(category, field):
+                        setattr(category, field, value)
+                        return True
+                return False
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении поля категории {category_id}.{field}: {e}")
+            return False
+        
+    def _delete_category(self, category_id: int) -> bool:
+        """Удалить категорию"""
+        try:
+            with self.session_scope() as session:
+                # Получаем категорию
+                category = session.query(Category).filter_by(id=category_id).first()
+                if category:
+                    # Обнуляем category_id у связанных товаров
+                    products = session.query(Product).filter_by(category_id=category_id).all()
+                    for product in products:
+                        product.category_id = None
+                    
+                    # Удаляем категорию
+                    session.delete(category)
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Ошибка при удалении категории {category_id}: {e}")
+            return False
+
+    # -- КОНЕЦ УПРАВЛЕНИЯ КАТЕГОРИЯМИ --
 
     def add_product_returning_id(self, product_data: dict) -> int:
         """Добавление товара и возвращение ID с использованием ORM"""

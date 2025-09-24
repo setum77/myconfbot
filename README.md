@@ -309,3 +309,14 @@ myconfbot
 - ! В дальнейшем нужно настроить очистку логов по времени (RotatingFileHandler + TimedRotatingFileHandler)
 - models модели для БД хранились в папке src/myconfbot/models в разных файлах. Создал один src\myconfbot\utils\models.py
 - в управлении продукцией добавил модуль - удаление продукта
+- начал рефакторинг product_management.py - Менеджер управления продукцией - разрасся до 2300 строк, при этом еще не все методы реализованы. Разбил на части 
+  - category_manager.py - управление категориями товаров
+  - product_management.py - основной класс
+  - product_constants.py - константы, клавиатуры
+  - product_creator.py - создание товор
+  - product_viewer.py - просмотр товаров
+  - product_states.py - менеджер состояний
+  - photo_manager.py - менеджер фотографий
+
+## 24.09.25 
+- category_manager.py - в рабочем состоянии
