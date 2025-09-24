@@ -11,7 +11,7 @@ from .product_states import ProductState
 from .product_constants import ProductConstants
 from .product_creator import ProductCreator
 # from .product_editor import ProductEditor  # Будет реализован аналогично
-# from .product_viewer import ProductViewer  # Будет реализован аналогично
+from .product_viewer import ProductViewer
 from .photo_manager import PhotoManager
 from .category_manager import CategoryManager
 from src.myconfbot.services.auth_service import AuthService
@@ -26,7 +26,7 @@ class ProductManagementHandler(BaseAdminHandler):
         # Инициализация компонентов
         self.creator = ProductCreator(bot, db_manager, self.states_manager, self.photos_dir)
         # self.editor = ProductEditor(bot, db_manager, self.states_manager, self.photos_dir)
-        # self.viewer = ProductViewer(bot, db_manager, self.photos_dir)
+        self.viewer = ProductViewer(bot, db_manager, self.photos_dir)
         self.photo_manager = PhotoManager(bot, db_manager, self.photos_dir)
         self.category_manager = CategoryManager(bot, db_manager, self.states_manager, auth_service)
         
@@ -192,13 +192,20 @@ class ProductManagementHandler(BaseAdminHandler):
     
     def _register_callbacks(self):
         """Регистрация callback'ов"""
+        # обработчик callback'ов продукции
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('product_'))
         def handle_product_callbacks(callback: CallbackQuery):
             self._handle_main_callbacks(callback)
         
+        # обработчик callback'ов категорий товаров
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('category_'))
         def handle_category_callbacks(callback: CallbackQuery):
             self.category_manager.handle_category_callbacks(callback)
+
+        # обработчик callback'ов просмотра
+        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('view_'))
+        def handle_view_callbacks(callback: CallbackQuery):
+            self.viewer.handle_view_callbacks(callback)
 
     def _register_state_handlers(self):
         """Регистрация обработчиков состояний"""
@@ -248,7 +255,7 @@ class ProductManagementHandler(BaseAdminHandler):
                 self.bot.send_message(callback.message.chat.id, "✏️ Редактирование в разработке")
             elif data == 'product_view':
                 # self.viewer.start_viewing(callback.message)
-                self.bot.send_message(callback.message.chat.id, "👀 Просмотр в разработке")
+                self.viewer.start_viewing(callback.message)
             elif data == 'product_delete':
                 self._delete_products(callback.message)
                 

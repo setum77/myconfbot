@@ -313,10 +313,11 @@ myconfbot
   - category_manager.py - управление категориями товаров
   - product_management.py - основной класс
   - product_constants.py - константы, клавиатуры
-  - product_creator.py - создание товор
+  - product_creator.py - создание товара
   - product_viewer.py - просмотр товаров
   - product_states.py - менеджер состояний
   - photo_manager.py - менеджер фотографий
 
 ## 24.09.25 
-- category_manager.py - в рабочем состоянии
+- category_manager.py - сделано
+- product_viewer.py - сделано

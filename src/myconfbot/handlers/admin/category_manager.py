@@ -589,7 +589,9 @@ class CategoryManager:
             types.InlineKeyboardButton("➕ Добавить категорию", callback_data="category_add"),
             types.InlineKeyboardButton("✏️ Редактировать категории", callback_data="category_edit_list")
         )
-        keyboard.add(types.InlineKeyboardButton("🔙 Назад", callback_data="category_back_manage"))
+        keyboard.add(
+            types.InlineKeyboardButton("🔙 Назад", callback_data="category_back_manage")
+                     )
         return keyboard
 
     def _show_category_management(self, callback: CallbackQuery):
@@ -643,3 +645,21 @@ class CategoryManager:
             return False
         
         return True
+    
+    def _back_to_product_management(self, callback: CallbackQuery):
+        """Возврат в меню управления продукцией"""
+        try:
+            # Удаляем текущее сообщение
+            self.bot.delete_message(callback.message.chat.id, callback.message.message_id)
+        except:
+            pass
+        
+        from .product_management import ProductManagementHandler
+        
+        # Отправляем меню управления продукцией
+        self.bot.send_message(
+            callback.message.chat.id,
+            ProductConstants.PRODUCT_MANAGEMENT_TITLE,
+            reply_markup=ProductConstants.create_management_keyboard(),
+            parse_mode='HTML'
+        )
