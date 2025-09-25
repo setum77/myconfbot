@@ -276,8 +276,7 @@ class ProductViewer:
         text += f"📁 <b>Категория:</b> {product['category_name']}\n"
         text += f"📄 <b>Описание:</b> {product['short_description'] or 'Не указано'}\n"
         text += f"🔄 <b>Доступен:</b> {'✅ Да' if product['is_available'] else '❌ Нет'}\n"
-        text += f"📏 <b>Единица измерения:</b> {product['measurement_unit']}\n"
-        text += f"⚖️ <b>Количество:</b> {product['quantity']}\n"
+        text += f"⚖️ <b>Количество:</b> {product['quantity'] } {product['measurement_unit']}\n"
         text += f"💰 <b>Цена:</b> {product['price']} руб.\n"
         text += f"💳 <b>Условия оплаты:</b> {product['prepayment_conditions'] or 'Не указано'}\n"
         text += f"📅 <b>Создан:</b> {product['created_at'].strftime('%d.%m.%Y %H:%M')}\n"
@@ -312,3 +311,87 @@ class ProductViewer:
             callback_data="view_back_categories"
         ))
         return keyboard
+    
+    def show_product_summary(self, message: Message, product_id: int):
+        """Показать сводную информацию о товаре (для использования в других модулях)"""
+        
+        product = self.db_manager.get_product_by_id(product_id)
+        
+        print(f'Выводим информацию о продукте {product['name']}')
+        
+        if not product:
+            self.bot.send_message(message.chat.id, "❌ Товар не найден")
+            return
+        
+        # Форматируем информацию о товаре
+        product_text = self._format_product_details(product)
+        
+        # Получаем фотографии товара
+        photos = self.db_manager.get_product_photos(product_id)
+        
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton("🔙 В меню продукции",
+            callback_data=f"view_back_products"))
+        
+        # Если есть фото, отправляем их все в одной медиагруппе
+        if photos and any(os.path.exists(p['photo_path']) for p in photos):
+            media_group = []
+            file_objects = []  # Для отслеживания открытых файлов
+            
+            try:
+                # Сортируем фото: основное первое
+                main_photos = [p for p in photos if p.get('is_main')]
+                other_photos = [p for p in photos if not p.get('is_main')]
+                sorted_photos = main_photos + other_photos
+                
+                for i, photo_info in enumerate(sorted_photos[:10]):  # Ограничение Telegram
+                    if os.path.exists(photo_info['photo_path']):
+                        file_obj = open(photo_info['photo_path'], 'rb')
+                        file_objects.append(file_obj)
+                        
+                        if i == 0:  # Первое фото с описанием
+                            media_group.append(types.InputMediaPhoto(
+                                file_obj,
+                                caption=product_text,
+                                parse_mode='HTML'
+                            ))
+                        else:  # Остальные фото без подписи
+                            media_group.append(types.InputMediaPhoto(file_obj))
+                
+                if media_group:
+                    # Отправляем медиагруппу. Нужно будет реализовать в случае если фотографий >10
+                    self.bot.send_media_group(message.chat.id, media_group)
+                    
+                    # Отправляем клавиатуру отдельным сообщением
+                    self.bot.send_message(
+                        message.chat.id,
+                        "📸 Все фотографии товара",
+                        reply_markup=keyboard
+                    )
+                    
+            except Exception as e:
+                logger.error(f"Ошибка отправки медиагруппы: {e}")
+                # Fallback: отправляем описание товара
+                self.bot.send_message(
+                    message.chat.id,
+                    product_text,
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+            finally:
+                # Закрываем все файлы
+                for file_obj in file_objects:
+                    try:
+                        file_obj.close()
+                    except:
+                        pass
+        else:
+            # Если фото нет, отправляем просто текст
+            self.bot.send_message(
+                message.chat.id,
+                product_text,
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+        
+        # self.bot.answer_callback_query(callback.id)

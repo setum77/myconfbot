@@ -8,7 +8,7 @@ class ProductState(Enum):
     CONFIRMATION = "confirmation"              # Подтверждение
     #PHOTO_MANAGEMENT = "photo_management"
     PHOTO_QUESTION = "photo_question"        # Новое: вопрос о фото
-    ADDING_PHOTOS = "adding_photos"       # Управление фото
+    ADDING_PHOTOS = "photo_product_adding"       # Управление фото
 
 
 # from enum import Enum

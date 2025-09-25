@@ -77,8 +77,10 @@ class ProductConstants:
     def create_measurement_units_keyboard():
         """Клавиатура с единицами измерения"""
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-        for unit in ProductConstants.MEASUREMENT_UNITS:
-            keyboard.add(types.KeyboardButton(unit))
+        unit_buttons = [types.KeyboardButton(unit) for unit in ProductConstants.MEASUREMENT_UNITS]
+        for i in range(0, len(unit_buttons), 3):
+            row_buttons = unit_buttons[i:i+3]
+            keyboard.add(*row_buttons)
         keyboard.add(types.KeyboardButton("❌ Отмена"))
         return keyboard
 
@@ -106,6 +108,14 @@ class ProductConstants:
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
         keyboard.add(types.KeyboardButton("✅ Да, добавить фото"))
         keyboard.add(types.KeyboardButton("⏭️ Пропустить"))
+        keyboard.add(types.KeyboardButton("❌ Отмена"))
+        return keyboard
+    
+    @staticmethod
+    def create_photos_done_keyboard():
+        """Клавиатура для завершения добавления фото"""
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        keyboard.add(types.KeyboardButton("✅ Готово"))
         keyboard.add(types.KeyboardButton("❌ Отмена"))
         return keyboard
     

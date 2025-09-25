@@ -58,6 +58,9 @@ class CategoryManager:
             elif data == 'category_back_list':
                 # Назад к списку категорий для редактирования
                 self.start_editing(callback)
+            elif data == 'category_manadge_product_back_list':
+                # Назад к управлению продукцией
+                self.back_to_product_management(callback)
             else:
                 logger.warning(f"Unknown callback data: {data}")
                 self.bot.answer_callback_query(callback.id, "❌ Неизвестная команда")
@@ -534,18 +537,6 @@ class CategoryManager:
         self.bot.send_message(callback.message.chat.id, message_text)
         
         # Возвращаемся к управлению категориями
-        self._show_category_management(callback)                            
-        
-        # Удаляем сообщение с подтверждением
-        try:
-            self.bot.delete_message(callback.message.chat.id, callback.message.message_id)
-        except:
-            pass
-            
-        # Показываем результат
-        self.bot.send_message(callback.message.chat.id, message_text)
-        
-        # Возвращаемся к управлению категориями
         self._show_category_management(callback)
 
     def validate_category_name(self, name: str, exclude_category_id: int = None) -> tuple[bool, str]:
@@ -590,7 +581,8 @@ class CategoryManager:
             types.InlineKeyboardButton("✏️ Редактировать категории", callback_data="category_edit_list")
         )
         keyboard.add(
-            types.InlineKeyboardButton("🔙 Назад", callback_data="category_back_manage")
+            types.InlineKeyboardButton("🔙 Назад", callback_data="category_back_manage"),
+            types.InlineKeyboardButton("🎂 В управление продукцией", callback_data="category_manadge_product_back_list")
                      )
         return keyboard
 
@@ -646,20 +638,16 @@ class CategoryManager:
         
         return True
     
-    def _back_to_product_management(self, callback: CallbackQuery):
+    def back_to_product_management(self, callback: CallbackQuery):
         """Возврат в меню управления продукцией"""
         try:
             # Удаляем текущее сообщение
             self.bot.delete_message(callback.message.chat.id, callback.message.message_id)
         except:
             pass
-        
-        from .product_management import ProductManagementHandler
-        
-        # Отправляем меню управления продукцией
         self.bot.send_message(
             callback.message.chat.id,
-            ProductConstants.PRODUCT_MANAGEMENT_TITLE,
+            "🏪 <b>Управление продукцией</b>\n\nВыберите действие:",
             reply_markup=ProductConstants.create_management_keyboard(),
             parse_mode='HTML'
         )

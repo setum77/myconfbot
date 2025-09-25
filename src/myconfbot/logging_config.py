@@ -53,12 +53,12 @@ LOG_CONFIG = {
     },
     "loggers": {
         "aiogram": {
-            "level": "WARNING",
+            "level": "DEBUG",
             "handlers": ["console", "file"],
             "propagate": False,
         },
         "sqlalchemy": {
-            "level": "WARNING",
+            "level": "DEBUG",
             "handlers": ["console", "file"],
             "propagate": True,
         },

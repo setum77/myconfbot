@@ -767,7 +767,7 @@ class DatabaseManager:
     
     def delete_product(self, product_id: int) -> bool:
         """Удаление товара из базы данных"""
-        print(f"DEBUG: DatabaseManager.delete_product called for {product_id}")
+        logger.info(f"DEBUG: DatabaseManager.delete_product called for {product_id}")
         try:
             with self.session_scope() as session:
                 # Сначала удаляем фотографии
@@ -788,23 +788,34 @@ class DatabaseManager:
     # --- Методы для работы с фотографиями продукции ---
 
     def add_product_photo(self, product_id: int, photo_path: str, is_main: bool = False) -> bool:
-        """Добавление фото товара"""
+        """Добавление фото товара в БД"""
         try:
+            logger.info(f"🔍 ДЕБАГ: add_product_photo called: product_id={product_id}, path={photo_path}, is_main={is_main}")
+            
             with self.session_scope() as session:
-                # Если устанавливаем как основное, сбрасываем предыдущее
-                if is_main:
-                    session.query(ProductPhoto).filter_by(product_id=product_id, is_main=True).update({'is_main': False})
+                # Получаем максимальный order_index для этого товара
+                max_order = session.query(func.max(ProductPhoto.order_index)).filter(
+                    ProductPhoto.product_id == product_id
+                ).scalar() or 0
                 
                 photo = ProductPhoto(
                     product_id=product_id,
                     photo_path=photo_path,
-                    is_main=is_main
+                    is_main=is_main,
+                    order_index=max_order + 1  # Исправлено: было display_order
                 )
+                
                 session.add(photo)
+                session.commit()
+                logger.info(f"✅ ДЕБАГ: Фото успешно добавлено в БД, ID: {photo.id}")
                 return True
+                
         except Exception as e:
-            logger.error(f"Ошибка при добавлении фото товара: {e}")
-            return False
+            logger.error(f"Ошибка в сессии БД: {e}")
+            logger.error(f"❌ ДЕБАГ: Ошибка: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False                                                            
 
     def get_product_photos(self, product_id: int) -> List[dict]:
         """Получение всех фото товара"""

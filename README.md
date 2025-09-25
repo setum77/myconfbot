@@ -314,6 +314,7 @@ myconfbot
   - product_management.py - основной класс
   - product_constants.py - константы, клавиатуры
   - product_creator.py - создание товара
+  - product_editor.py - редактирование товара
   - product_viewer.py - просмотр товаров
   - product_states.py - менеджер состояний
   - photo_manager.py - менеджер фотографий
@@ -321,3 +322,9 @@ myconfbot
 ## 24.09.25 
 - category_manager.py - сделано
 - product_viewer.py - сделано
+
+## 25.09.25
+- photo_manager.py - сделано добавление фотографий при создании товара
+- исправлено - действие кнопки "❌ Отмена" в product_creator.py
+- возврат в меню "Управление продукцией"
+- исправлено отображение инлайн кнопок где нужно 2, или 3 ряда в product_creator.py

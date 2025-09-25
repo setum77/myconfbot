@@ -6,6 +6,7 @@ from telebot import types
 from telebot.types import Message, CallbackQuery
 from .product_constants import ProductConstants
 from .product_states import ProductState
+from .photo_manager import PhotoManager
 
 logger = logging.getLogger(__name__)
 
@@ -13,11 +14,12 @@ class ProductCreator:
 
     """Класс для создания товаров"""
     
-    def __init__(self, bot, db_manager, states_manager, photos_dir):
+    def __init__(self, bot, db_manager, states_manager, photos_dir, photo_manager=None):
         self.bot = bot
         self.db_manager = db_manager
         self.states_manager = states_manager
         self.photos_dir = photos_dir
+        self.photo_manager = photo_manager
 
     def start_creation(self, callback: CallbackQuery):
         """Начало создания товара"""
@@ -40,6 +42,10 @@ class ProductCreator:
 
     def handle_basic_info(self, message: Message):
         """Обработка основной информации"""
+        # Обработка отмены
+        if self._check_cancellation(message):
+            return
+        
         user_id = message.from_user.id
         product_data = self.states_manager.get_product_data(user_id)
         
@@ -60,6 +66,10 @@ class ProductCreator:
 
     def handle_details(self, message: Message):
         """Обработка детальной информации"""
+        # Проверка отмены
+        if self._check_cancellation(message):
+            return
+
         user_id = message.from_user.id
         product_data = self.states_manager.get_product_data(user_id)
         
@@ -73,6 +83,28 @@ class ProductCreator:
             self._handle_price_input(message, product_data, user_id)
         elif 'prepayment_conditions' not in product_data:
             self._handle_prepayment_input(message, product_data, user_id)
+    
+    def _check_cancellation(self, message: Message) -> bool:
+        """Проверка нажатия кнопки отмены"""
+        if message.text == "❌ Отмена":
+            self._cancel_creation(message)
+            return True
+        return False
+
+    def _cancel_creation(self, message: Message):
+        """Отмена создания товара"""
+        user_id = message.from_user.id
+        self.states_manager.clear_product_state(user_id)
+        
+        self.bot.send_message(
+            message.chat.id,
+            "❌ Создание товара отменено.",
+            reply_markup=types.ReplyKeyboardRemove()
+        )
+        
+        # Здесь можно добавить возврат в главное меню или другую логику
+        # Например, отправить основное меню:
+        self._back_to_product_management(message.chat.id)
 
     def _ask_category(self, message: Message):
         """Запрос категории"""
@@ -86,6 +118,10 @@ class ProductCreator:
 
     def _handle_category_input(self, message: Message, product_data: dict, user_id: int):
         """Обработка ввода категории"""
+        # Проверка отмены
+        if self._check_cancellation(message):
+            return
+        
         categories = self.db_manager.get_all_categories()
         category_names = [cat['name'].lower() for cat in categories]
         
@@ -110,6 +146,10 @@ class ProductCreator:
 
     def _handle_availability_input(self, message: Message, product_data: dict, user_id: int):
         """Обработка доступности"""
+        # Проверка отмены
+        if self._check_cancellation(message):
+            return
+
         if message.text == "✅ Да":
             product_data['is_available'] = True
         elif message.text == "❌ Нет":
@@ -133,6 +173,10 @@ class ProductCreator:
 
     def _handle_description_input(self, message: Message, product_data: dict, user_id: int):
         """Обработка описания"""
+        # Проверка отмены
+        if self._check_cancellation(message):
+            return
+        
         if message.text.lower() == '⏭️ пропустить':
             product_data['short_description'] = ''
         else:
@@ -149,6 +193,10 @@ class ProductCreator:
 
     def _handle_unit_input(self, message: Message, product_data: dict, user_id: int):
         """Обработка единицы измерения"""
+        # Проверка отмены
+        if self._check_cancellation(message):
+            return
+        
         if message.text not in ProductConstants.MEASUREMENT_UNITS:
             self.bot.send_message(
                 message.chat.id,
@@ -169,6 +217,10 @@ class ProductCreator:
 
     def _handle_quantity_input(self, message: Message, product_data: dict, user_id: int):
         """Обработка количества"""
+        # Проверка отмены
+        if self._check_cancellation(message):
+            return
+        
         try:
             quantity = float(message.text)
             product_data['quantity'] = quantity
@@ -189,6 +241,10 @@ class ProductCreator:
 
     def _handle_price_input(self, message: Message, product_data: dict, user_id: int):
         """Обработка цены"""
+        # Проверка отмены
+        if self._check_cancellation(message):
+            return
+        
         try:
             price = float(message.text)
             product_data['price'] = price
@@ -209,6 +265,10 @@ class ProductCreator:
 
     def _handle_prepayment_input(self, message: Message, product_data: dict, user_id: int):
         """Обработка условий оплаты"""
+        # Проверка отмены
+        if self._check_cancellation(message):
+            return
+        
         if message.text not in ProductConstants.PREPAYMENT_OPTIONS:
             self.bot.send_message(
                 message.chat.id,
@@ -240,8 +300,8 @@ class ProductCreator:
         text += f"📁 <b>Категория ID:</b> {product_data.get('category_id', 'Не указана')}\n"
         text += f"📄 <b>Описание:</b> {product_data.get('short_description', 'Не указано')}\n"
         text += f"🔄 <b>Доступен:</b> {'Да' if product_data.get('is_available', True) else 'Нет'}\n"
-        text += f"📏 <b>Единица измерения:</b> {product_data.get('measurement_unit', 'шт')}\n\n"
-        text += f"⚖️ <b>Количество:</b> {product_data.get('quantity', 0)}\n"
+        #text += f"📏 <b>Единица измерения:</b> {product_data.get('measurement_unit', 'шт')}\n"
+        text += f"⚖️ <b>Количество:</b> {product_data('quantity')} {product_data('measurement_unit')}\n"
         text += f"💰 <b>Цена:</b> {product_data.get('price', 0)} руб.\n"
         text += f"💳 <b>Оплата:</b> {product_data.get('prepayment_conditions', 'Не указано')}\n"
         text += "✅ <b>Сохранить товар?</b>"
@@ -258,15 +318,22 @@ class ProductCreator:
     def _create_categories_keyboard(self):
         """Создание клавиатуры с категориями"""
         categories = self.db_manager.get_all_categories()
+        category_names = [category['name'] for category in categories]
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-        for category in categories:
-            keyboard.add(types.KeyboardButton(category['name']))
+        category_buttons = [types.KeyboardButton(name) for name in category_names]
+        for i in range(0, len(category_buttons), 2):
+            row_buttons = category_buttons[i:i+2]
+            keyboard.add(*row_buttons)
         keyboard.add(types.KeyboardButton("❌ Отмена"))
         return keyboard
     
     # product_creator.py - добавим в конец класса
     def _handle_confirmation(self, message: Message):
         """Обработка подтверждения сохранения товара"""
+        # Проверка отмены
+        if self._check_cancellation(message):
+            return
+        
         user_id = message.from_user.id
         
         if message.text == "✅ Сохранить":
@@ -298,42 +365,11 @@ class ProductCreator:
                     "❌ Ошибка при сохранении товара.",
                     reply_markup=ProductConstants.create_confirmation_keyboard()
                 )
-        
-    
-    def handle_photo_question(self, message: Message):
-        """Обработка ответа на вопрос о фото"""
-        user_id = message.from_user.id
-        product_data = self.states_manager.get_product_data(user_id)
-        
-        if message.text == "✅ Да, добавить фото":
-            # Переходим к добавлению фото
-            self.states_manager.set_product_state(user_id, {
-                'state': ProductState.ADDING_PHOTOS,
-                'product_data': product_data
-            })
-            
-            self.bot.send_message(
-                message.chat.id,
-                "📸 Отправьте фотографии товара:\n\n"
-                "После добавления всех фото нажмите '✅ Готово'",
-                reply_markup=self._create_photos_done_keyboard()
-            )
-            
-        elif message.text == "⏭️ Пропустить":
-            # Завершаем без фото
-            self.states_manager.clear_product_state(user_id)
-            self.bot.send_message(
-                message.chat.id,
-                f"✅ Товар готов! Можете добавить фото позже через редактирование.",
-                parse_mode='HTML',
-                reply_markup=types.ReplyKeyboardRemove()
-            )
-            # Возвращаем в меню управления
-            self._return_to_management(message)
-        
-        else:
-            self.bot.send_message(
-                message.chat.id,
-                "Пожалуйста, выберите вариант:",
-                reply_markup=ProductConstants.create_photo_question_keyboard()
-            )
+    def _back_to_product_management(self, chat_id: int):
+        """Возврат в меню управления продукцией"""
+        self.bot.send_message(
+            chat_id,
+            "🏪 <b>Управление продукцией</b>\n\nВыберите действие:",
+            reply_markup=ProductConstants.create_management_keyboard(),
+            parse_mode='HTML'
+        )
