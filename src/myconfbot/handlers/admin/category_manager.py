@@ -85,13 +85,13 @@ class CategoryManager:
         
         state = user_state.get('state', '')
         
-        if state == 'adding_category_name':
+        if state == 'category_adding_name':
             self._handle_category_name(message)
-        elif state == 'adding_category_description':
+        elif state == 'category_adding_description':
             self._handle_category_description(message)
-        elif state.startswith('editing_category_name_'):
+        elif state.startswith('category_editing_name_'):
             self._handle_category_rename(message, state)
-        elif state.startswith('editing_category_desc_'):
+        elif state.startswith('category_editing_desc_'):
             self._handle_category_desc_edit(message, state)
 
     # === СОЗДАНИЕ КАТЕГОРИЙ ===
@@ -101,7 +101,7 @@ class CategoryManager:
         logger.info(f'Starting category creation for user {callback.from_user.id}')
         
         self.states_manager.set_management_state(callback.from_user.id, {
-            'state': 'adding_category_name',
+            'state': 'category_adding_name',
             'category_data': {}
         })
         
@@ -113,7 +113,7 @@ class CategoryManager:
         self.bot.send_message(
             callback.message.chat.id,
             "📁 <b>Добавление новой категории</b>\n\n"
-            "📝 Введите <b>название</b> категории:",
+            "📝 Введите <b>название</b> категории (избегайте кавычки, эмодзи, спецсимволы):",
             parse_mode='HTML',
             reply_markup=ProductConstants.create_cancel_keyboard()
         )
@@ -133,7 +133,7 @@ class CategoryManager:
         user_id = message.from_user.id
         user_state = self.states_manager.get_management_state(user_id)
         
-        if not user_state or user_state.get('state') != 'adding_category_name':
+        if not user_state or user_state.get('state') != 'category_adding_name':
             return
         
         category_data = user_state.get('category_data', {})
@@ -148,7 +148,7 @@ class CategoryManager:
         
         # Обновляем состояние
         self.states_manager.set_management_state(user_id, {
-            'state': 'adding_category_description',
+            'state': 'category_adding_description',
             'category_data': category_data
         })
         
@@ -174,7 +174,7 @@ class CategoryManager:
         user_id = message.from_user.id
         user_state = self.states_manager.get_management_state(user_id)
         
-        if not user_state or user_state.get('state') != 'adding_category_description':
+        if not user_state or user_state.get('state') != 'category_adding_description':
             return
         
         category_data = user_state.get('category_data', {})
@@ -295,7 +295,7 @@ class CategoryManager:
     def _start_category_rename(self, callback: CallbackQuery, category_id: int):
         """Начать переименование категории"""
         self.states_manager.set_management_state(callback.from_user.id, {
-            'state': f'editing_category_name_{category_id}',
+            'state': f'category_editing_name_{category_id}',
             'category_id': category_id
         })
         
@@ -316,7 +316,7 @@ class CategoryManager:
     def _start_category_desc_edit(self, callback: CallbackQuery, category_id: int):
         """Начать изменение описания категории"""
         self.states_manager.set_management_state(callback.from_user.id, {
-            'state': f'editing_category_desc_{category_id}',
+            'state': f'category_editing_desc_{category_id}',
             'category_id': category_id
         })
         
@@ -346,7 +346,7 @@ class CategoryManager:
             self._show_category_management_message(message)
             return
         
-        category_id = int(state.replace('editing_category_name_', ''))
+        category_id = int(state.replace('category_editing_name_', ''))
         success, message_text = self.update_category_name(category_id, message.text)
         
         self.bot.send_message(message.chat.id, message_text)
@@ -366,7 +366,7 @@ class CategoryManager:
             self._show_category_management_message(message)
             return
         
-        category_id = int(state.replace('editing_category_desc_', ''))
+        category_id = int(state.replace('category_editing_desc_', ''))
         new_description = '' if message.text.lower() == '⏭️ пропустить' else message.text
         success, message_text = self.update_category_description(category_id, new_description)
         

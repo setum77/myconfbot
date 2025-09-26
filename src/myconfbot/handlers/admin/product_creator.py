@@ -108,7 +108,7 @@ class ProductCreator:
 
     def _ask_category(self, message: Message):
         """Запрос категории"""
-        keyboard = self._create_categories_keyboard()
+        keyboard = self._create_categories_keyboard(row_width=2)
         self.bot.send_message(
             message.chat.id,
             "📁 Выберите <b>категорию</b> товара:",
@@ -129,7 +129,7 @@ class ProductCreator:
             self.bot.send_message(
                 message.chat.id,
                 "❌ Категория не найдена. Выберите из предложенных:",
-                reply_markup=self._create_categories_keyboard()
+                reply_markup=self._create_categories_keyboard(row_width=2)
             )
             return
         
@@ -301,7 +301,7 @@ class ProductCreator:
         text += f"📄 <b>Описание:</b> {product_data.get('short_description', 'Не указано')}\n"
         text += f"🔄 <b>Доступен:</b> {'Да' if product_data.get('is_available', True) else 'Нет'}\n"
         #text += f"📏 <b>Единица измерения:</b> {product_data.get('measurement_unit', 'шт')}\n"
-        text += f"⚖️ <b>Количество:</b> {product_data('quantity')} {product_data('measurement_unit')}\n"
+        text += f"⚖️ <b>Количество:</b> {product_data.get('quantity', '')} {product_data.get('measurement_unit', 'шт')}\n"
         text += f"💰 <b>Цена:</b> {product_data.get('price', 0)} руб.\n"
         text += f"💳 <b>Оплата:</b> {product_data.get('prepayment_conditions', 'Не указано')}\n"
         text += "✅ <b>Сохранить товар?</b>"
@@ -315,17 +315,33 @@ class ProductCreator:
             'product_data': product_data
         })
 
-    def _create_categories_keyboard(self):
+    def _create_categories_keyboard(self, row_width: int=2):
         """Создание клавиатуры с категориями"""
         categories = self.db_manager.get_all_categories()
-        category_names = [category['name'] for category in categories]
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-        category_buttons = [types.KeyboardButton(name) for name in category_names]
-        for i in range(0, len(category_buttons), 2):
-            row_buttons = category_buttons[i:i+2]
-            keyboard.add(*row_buttons)
+        
+        buttons = []
+        for category in categories:
+            buttons.append(types.KeyboardButton(category['name']))
+        
+        for i in range(0, len(buttons), row_width):
+                    row_buttons = buttons[i:i + row_width]
+                    keyboard.add(*row_buttons)
+        
         keyboard.add(types.KeyboardButton("❌ Отмена"))
         return keyboard
+
+    # def _create_categories_keyboard(self):
+    #     """Создание клавиатуры с категориями"""
+    #     categories = self.db_manager.get_all_categories()
+    #     category_names = [category['name'] for category in categories]
+    #     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    #     category_buttons = [types.KeyboardButton(name) for name in category_names]
+    #     for i in range(0, len(category_buttons), 2):
+    #         row_buttons = category_buttons[i:i+2]
+    #         keyboard.add(*row_buttons)
+    #     keyboard.add(types.KeyboardButton("❌ Отмена"))
+    #     return keyboard
     
     # product_creator.py - добавим в конец класса
     def _handle_confirmation(self, message: Message):

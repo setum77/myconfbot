@@ -3,6 +3,7 @@ import logging
 import os
 from telebot import types
 from telebot.types import Message, CallbackQuery
+from .product_constants import ProductConstants
 
 logger = logging.getLogger(__name__)
 
@@ -52,20 +53,12 @@ class ProductViewer:
             )
             return
         
-        keyboard = types.InlineKeyboardMarkup(row_width=2)
-
-        for category in categories:
-            # Получаем количество товаров в категории
-            products_count = len(self.db_manager.get_products_by_category(category['id']))
-            keyboard.add(types.InlineKeyboardButton(
-                f"📁 {category['name']} ({products_count})",
-                callback_data=f"view_category_{category['id']}"
-            ))
-        
-        keyboard.add(types.InlineKeyboardButton(
-            "🔙 Назад",
-            callback_data="view_back_products"
-        ))
+        # ИСПРАВЛЕНИЕ: Используем InlineKeyboardMarkup вместо ReplyKeyboardMarkup
+        keyboard = ProductConstants.create_categories_keyboard_inline(
+            categories=categories,
+            db_manager=self.db_manager,
+            back_callback="view_back_products"
+        )
         
         self.bot.send_message(
             message.chat.id,
@@ -90,7 +83,12 @@ class ProductViewer:
         categories = self.db_manager.get_all_categories()
         category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), 'Неизвестно')
         
-        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        # keyboard = ProductConstants.create_product_details_keyboard_inline(
+        #     product=product,
+        #     db_manager=self.db_manager,
+        #     back_callback="view_back_categories"
+        # )
+        keyboard = types.InlineKeyboardMarkup()
         
         for product in products:
             # Получаем количество фотографий для товара
@@ -165,14 +163,14 @@ class ProductViewer:
                         if i == 0:  # Первое фото с описанием
                             media_group.append(types.InputMediaPhoto(
                                 file_obj,
-                                caption=product_text,
+                                caption=product_text,  # Используем отформатированный текст
                                 parse_mode='HTML'
                             ))
                         else:  # Остальные фото без подписи
                             media_group.append(types.InputMediaPhoto(file_obj))
                 
                 if media_group:
-                    # Отправляем медиагруппу. Нужно будет реализовать в случае если фотографий >10
+                    # Отправляем медиагруппу
                     self.bot.send_media_group(callback.message.chat.id, media_group)
                     
                     # Отправляем клавиатуру отдельным сообщением
@@ -269,30 +267,28 @@ class ProductViewer:
         )
 
     def _format_product_details(self, product: dict) -> str:
-        """Форматирование детальной информации о товаре"""
-        text = "🎂 <b>Информация о товаре</b>\n\n"
-        text += f"🆔 <b>ID:</b> {product['id']}\n"
-        text += f"📝 <b>Название:</b> {product['name']}\n"
-        text += f"📁 <b>Категория:</b> {product['category_name']}\n"
-        text += f"📄 <b>Описание:</b> {product['short_description'] or 'Не указано'}\n"
-        text += f"🔄 <b>Доступен:</b> {'✅ Да' if product['is_available'] else '❌ Нет'}\n"
-        text += f"⚖️ <b>Количество:</b> {product['quantity'] } {product['measurement_unit']}\n"
-        text += f"💰 <b>Цена:</b> {product['price']} руб.\n"
-        text += f"💳 <b>Условия оплаты:</b> {product['prepayment_conditions'] or 'Не указано'}\n"
-        text += f"📅 <b>Создан:</b> {product['created_at'].strftime('%d.%m.%Y %H:%M')}\n"
-        text += f"🔄 <b>Обновлен:</b> {product['updated_at'].strftime('%d.%m.%Y %H:%M') if product['updated_at'] else 'Не обновлялся'}\n"
+        """Форматирование детальной информации о товаре (ТОЛЬКО текст)"""
+        
+        product_text = "🎂 <b>Информация о товаре</b>\n\n"
+        product_text += f"🆔 <b>ID:</b> {product['id']}\n"
+        product_text += f"📝 <b>Название:</b> {product['name']}\n"
+        product_text += f"📁 <b>Категория:</b> {product['category_name']}\n"
+        product_text += f"📄 <b>Описание:</b> {product['short_description'] or 'Не указано'}\n"
+        product_text += f"🔄 <b>Доступен:</b> {'✅ Да' if product['is_available'] else '❌ Нет'}\n"
+        product_text += f"⚖️ <b>Количество:</b> {product['quantity']} {product['measurement_unit']}\n"
+        product_text += f"💰 <b>Цена:</b> {product['price']} руб.\n"
+        product_text += f"💳 <b>Условия оплаты:</b> {product['prepayment_conditions'] or 'Не указано'}\n"
+        product_text += f"📅 <b>Создан:</b> {product['created_at'].strftime('%d.%m.%Y %H:%M')}\n"
+        product_text += f"🔄 <b>Обновлен:</b> {product['updated_at'].strftime('%d.%m.%Y %H:%M') if product['updated_at'] else 'Не обновлялся'}\n"
         
         # Информация о фотографиях
         photos = self.db_manager.get_product_photos(product['id'])
         if photos:
-            main_photos = [p for p in photos if p['is_main']]
-            text += f"\n📸 <b>Фотографии:</b> {len(photos)} шт.\n"
-            if main_photos:
-                text += f"📌 <b>Основное фото:</b> Установлено\n"
+            product_text += f"\n📸 <b>Фотографии:</b> {len(photos)} шт.\n"
         else:
-            text += "\n📸 <b>Фотографии:</b> Нет\n"
+            product_text += "\n📸 <b>Фотографии:</b> Нет\n"
         
-        return text
+        return product_text
 
     def _create_back_to_products_keyboard(self):
         """Клавиатура для возврата к управлению продукцией"""

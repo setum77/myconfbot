@@ -10,7 +10,7 @@ from .admin_base import BaseAdminHandler
 from .product_states import ProductState
 from .product_constants import ProductConstants
 from .product_creator import ProductCreator
-# from .product_editor import ProductEditor  # Будет реализован аналогично
+from .product_editor import ProductEditor
 from .product_viewer import ProductViewer
 from .photo_manager import PhotoManager
 from .category_manager import CategoryManager
@@ -26,7 +26,7 @@ class ProductManagementHandler(BaseAdminHandler):
         # Инициализация компонентов
         self.photo_manager = PhotoManager(bot, db_manager, self.states_manager, self.photos_dir)
         self.creator = ProductCreator(bot, db_manager, self.states_manager, self.photos_dir, self.photo_manager)
-        # self.editor = ProductEditor(bot, db_manager, self.states_manager, self.photos_dir)
+        self.product_editor = ProductEditor(bot, db_manager, self.states_manager, self.photos_dir)
         self.viewer = ProductViewer(bot, db_manager, self.photos_dir)
         self.category_manager = CategoryManager(bot, db_manager, self.states_manager, auth_service)
         
@@ -120,6 +120,11 @@ class ProductManagementHandler(BaseAdminHandler):
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('view_'))
         def handle_view_callbacks(callback: CallbackQuery):
             self.viewer.handle_view_callbacks(callback)
+        
+        # обработчик callback'ов редактирования
+        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('edit_'))
+        def handle_edit_callbacks(callback: CallbackQuery):
+            self.product_editor.handle_edit_callbacks(callback)
 
     def _register_state_handlers(self):
         """Регистрация обработчиков состояний"""
@@ -161,6 +166,16 @@ class ProductManagementHandler(BaseAdminHandler):
         def handle_cancel(message: Message):
             self._cancel_creation(message)
 
+        # Обработчик состояний редактирования
+        @self.bot.message_handler(
+            func=lambda message: (
+                self.states_manager.get_management_state(message.from_user.id) is not None and
+                self.states_manager.get_management_state(message.from_user.id).get('state', '').startswith('editing_')
+            )
+        )
+        def handle_edit_states(message: Message):
+            self.product_editor.handle_edit_states(message)
+
     def _handle_main_callbacks(self, callback: CallbackQuery):
         """Обработка основных callback'ов"""
         if not self._check_admin_access(callback=callback):
@@ -172,13 +187,13 @@ class ProductManagementHandler(BaseAdminHandler):
             if data == 'product_add':
                 self.creator.start_creation(callback)
             elif data == 'product_edit':
-                # self.editor.start_editing(callback)
-                self.bot.send_message(callback.message.chat.id, "✏️ Редактирование в разработке")
+                self.product_editor.start_editing(callback)
             elif data == 'product_view':
-                # self.viewer.start_viewing(callback.message)
                 self.viewer.start_viewing(callback.message)
             elif data == 'product_delete':
                 self._delete_products(callback.message)
+            # elif data.startswith('edit_'):
+            #     self.product_editor.handle_edit_callbacks(callback)
                 
             self.bot.answer_callback_query(callback.id)
             
@@ -297,7 +312,7 @@ class ProductManagementHandler(BaseAdminHandler):
         """Удаление товаров"""
         self.bot.send_message(message.chat.id, "🚫 Функция удаления товаров в разработке")
 
-    # Добавляем новый метод для обработки вопроса о фото
+    # метод для обработки вопроса о фото
     def _handle_photo_question(self, message: Message):
         """Обработка вопроса о добавлении фото после создания товара"""
         user_id = message.from_user.id
