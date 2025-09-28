@@ -1,3 +1,5 @@
+# src\myconfbot\bot\confectionery_bot.py
+
 import logging
 logger = logging.getLogger(__name__)
 

@@ -27,23 +27,19 @@ class Product(Base):
     id = sa.Column(sa.Integer, primary_key=True)
     name = sa.Column(sa.String(100), nullable=False)
     category_id = sa.Column(sa.Integer, sa.ForeignKey("categories.id"))
-    cover_photo_path = sa.Column(sa.String(255))  # Исправлено
-    short_description = sa.Column(sa.Text)  # Добавлено
-    price = sa.Column(sa.Numeric(10, 2), nullable=False)
-    #photo_file_id = sa.Column(sa.String(255))  # Оставьте, если нужно
-    
+    cover_photo_path = sa.Column(sa.String(255))
+    short_description = sa.Column(sa.Text)
     is_available = sa.Column(sa.Boolean, default=True)
-    measurement_unit = sa.Column(sa.String(50))  # Добавлено
-    quantity = sa.Column(sa.Numeric(10, 2), default=0)  # Добавлено
-    prepayment_conditions = sa.Column(sa.Text)  # Добавлено
-    
+    measurement_unit = sa.Column(sa.String(50))
+    quantity = sa.Column(sa.Numeric(10, 2), default=0)
+    price = sa.Column(sa.Numeric(10, 2), nullable=False)
+    prepayment_conditions = sa.Column(sa.Text)
     created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
-    updated_at = sa.Column(sa.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)  # Добавлено
+    updated_at = sa.Column(sa.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     category = relationship("Category", back_populates="products")
-    #order_items = relationship("OrderItem", back_populates="product")
-    #photos = relationship("ProductPhoto", back_populates="product", cascade="all, delete-orphan")
     photos = relationship("ProductPhoto", back_populates="product", lazy="select")
+    orders = relationship("Order", back_populates="product")
 
     def __repr__(self):
         return f"Product(id={self.id}, name='{self.name}', price={self.price})"
@@ -54,79 +50,73 @@ class ProductPhoto(Base):
     id = sa.Column(sa.Integer, primary_key=True)
     product_id = sa.Column(sa.Integer, sa.ForeignKey("products.id"), nullable=False)
     photo_path = sa.Column(sa.String(255), nullable=False)
-    caption = sa.Column(sa.String(200))          # Подпись к фото
-    order_index = sa.Column(sa.Integer, default=0)  # Порядок показа (0, 1, 2...)
+    caption = sa.Column(sa.String(200))
+    order_index = sa.Column(sa.Integer, default=0)
     alt_text = sa.Column(sa.String(100))
     is_main = sa.Column(sa.Boolean, default=False)
     created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
     
     product = relationship("Product", back_populates="photos")
-    
+
+class OrderStatusEnum(Enum):
+    CREATED = "Создан / Новый"
+    CONFIRMED = "Подтверждён"
+    IN_PROGRESS = "В работе / Готовится"
+    AWAITING_DECORATION = "Ожидает украшения / Декорирования"
+    READY_FOR_PICKUP = "Готов к выдаче / Упакован"
+    IN_DELIVERY = "Передан курьеру / В доставке"
+    COMPLETED = "Выполнен / Завершён"
+    CANCELLED = "Отменён"
+    ON_HOLD = "Отложен / На паузе"
+    PROBLEMATIC = "Проблемный / Требует внимания"
 
 class OrderStatus(Base):
     __tablename__ = "order_statuses"
     
     id = sa.Column(sa.Integer, primary_key=True)
-    name = sa.Column(sa.String(100), nullable=False)  # character varying
-    description = sa.Column(sa.Text)  # может быть NULL
+    order_id = sa.Column(sa.Integer, sa.ForeignKey("orders.id"), nullable=False)
+    status = sa.Column(sa.String(100), nullable=False)
+    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
+    photo_path = sa.Column(sa.String(255))
     
-    # Связь с заказами
-    #orders = relationship("Order", back_populates="status")
+    order = relationship("Order", back_populates="status_history")
 
 class Order(Base):
     __tablename__ = "orders"
     
     id = sa.Column(sa.Integer, primary_key=True)
-    client_name = sa.Column(sa.String(100))
-    client_phone = sa.Column(sa.String(20))
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
     delivery_address = sa.Column(sa.Text)
-    product_id = sa.Column(sa.Integer, sa.ForeignKey("products.id"))
+    product_id = sa.Column(sa.Integer, sa.ForeignKey("products.id"), nullable=False)
     weight_grams = sa.Column(sa.Integer)
     quantity = sa.Column(sa.Integer)
     delivery_type = sa.Column(sa.String(50))
     created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
     ready_at = sa.Column(sa.DateTime)
-    comments = sa.Column(sa.Text)
     total_cost = sa.Column(sa.Numeric(10, 2))
-    status_id = sa.Column(sa.Integer, sa.ForeignKey("order_statuses.id"))  
-    status_changed_at = sa.Column(sa.DateTime)
-    status_reason = sa.Column(sa.Text)
     executor_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"))
     payment_type = sa.Column(sa.String(50))
     payment_status = sa.Column(sa.String(50))
-    completed_photo_path = sa.Column(sa.String(255))
+    admin_notes = sa.Column(sa.Text)  # Пометки к заказу (заполняет админ)
     
-#     # Связи
-#     product = relationship("Product")
-#     executor = relationship("User", foreign_keys=[executor_id])
-#     status = relationship("OrderStatus", back_populates="orders")  
+    # Связи
+    user = relationship("User", foreign_keys=[user_id])
+    product = relationship("Product", back_populates="orders")
+    executor = relationship("User", foreign_keys=[executor_id])
+    status_history = relationship("OrderStatus", back_populates="order")
+    notes = relationship("OrderNote", back_populates="order")
 
-# class OrderItem(Base):
-#     __tablename__ = "order_items"
-    
-#     id = sa.Column(sa.Integer, primary_key=True)
-#     order_id = sa.Column(sa.Integer, sa.ForeignKey("orders.id"), nullable=False)
-#     product_id = sa.Column(sa.Integer, sa.ForeignKey("products.id"), nullable=False)
-#     quantity = sa.Column(sa.Integer, nullable=False)
-#     price = sa.Column(sa.Numeric(10, 2), nullable=False)
-    
-#     order = relationship("Order", back_populates="items")
-#     product = relationship("Product", back_populates="order_items")
-    
-class Recipe(Base):
-    __tablename__ = "recipes"
+class OrderNote(Base):
+    __tablename__ = "order_notes"
     
     id = sa.Column(sa.Integer, primary_key=True)
-    title = sa.Column(sa.String(200), nullable=False)
-    description = sa.Column(sa.Text)
-    ingredients = sa.Column(sa.Text, nullable=False)
-    instructions = sa.Column(sa.Text, nullable=False)
-    photo_file_id = sa.Column(sa.String(255))
-    cooking_time = sa.Column(sa.Integer)  # in minutes
-    difficulty = sa.Column(sa.String(50))
+    order_id = sa.Column(sa.Integer, sa.ForeignKey("orders.id"), nullable=False)
     created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
-
-
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
+    note_text = sa.Column(sa.Text, nullable=False)
+    
+    order = relationship("Order", back_populates="notes")
+    user = relationship("User")
 
 class User(Base):
     __tablename__ = "users"
@@ -134,12 +124,14 @@ class User(Base):
     id = sa.Column(sa.Integer, primary_key=True)
     telegram_id = sa.Column(sa.BigInteger, unique=True, nullable=False)
     telegram_username = sa.Column(sa.String(100))
-    full_name = sa.Column(sa.String(100))
+    full_name = sa.Column(sa.String(200))
     phone = sa.Column(sa.String(20))
     address = sa.Column(sa.Text)
     characteristics = sa.Column(sa.Text)
     created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
     is_admin = sa.Column(sa.Boolean, default=False)
-    photo_path = sa.Column(sa.String(255))
+    photo_path = sa.Column(sa.String(500))
     
-    # orders = relationship("Order", back_populates="user")
+    orders = relationship("Order", back_populates="user", foreign_keys=[Order.user_id])
+    executed_orders = relationship("Order", back_populates="executor", foreign_keys=[Order.executor_id])
+    order_notes = relationship("OrderNote", back_populates="user")

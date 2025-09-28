@@ -1,3 +1,5 @@
+# src\myconfbot\config.py
+
 import logging
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,5 @@
+# src\myconfbot\services\auth_service.py
+
 from typing import Optional, Dict   
 from src.myconfbot.utils.database import DatabaseManager
 from src.myconfbot.utils.models import User

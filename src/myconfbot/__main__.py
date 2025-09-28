@@ -1,3 +1,5 @@
+# src\myconfbot\__main__.py
+
 import logging.config
 from .logging_config import setup_logging
 

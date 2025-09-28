@@ -1,3 +1,4 @@
+# 
 # Утилиты для бота
 from .database import DatabaseManager, db_manager
 from .content_manager import ContentManager

@@ -1,3 +1,5 @@
+# src\myconfbot\utils\database.py
+
 import logging
 logger = logging.getLogger(__name__)
 
@@ -13,7 +15,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # Импортируем модели для создания таблиц
-from .models import Base, Order, Product, Category, OrderStatus, User, ProductPhoto
+from .models import Base, Order, Product, Category, OrderStatus, User, ProductPhoto, OrderStatusEnum
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -313,81 +315,201 @@ class DatabaseManager:
             return []
         finally:
             session.close()
-                
+
+
+
     def update_user_characteristic(self, telegram_id: int, characteristic: str) -> bool:
         """Обновить характеристику пользователя"""
-        session = None
         try:
-            session = self._Session()
-            user = session.query(User).filter(User.telegram_id == telegram_id).first()
-            if user:
-                user.characteristics = characteristic
-                session.commit()
-                return True
-            return False
+            with self.session_scope() as session:
+                user = session.query(User).filter_by(telegram_id=telegram_id).first()
+                if user:
+                    user.characteristics = characteristic
+                    return True
+                return False
         except Exception as e:
-            if session: 
-                session.rollback()
             logger.error(f"Ошибка при обновлении характеристики: {e}")
             return False
-        finally:
-            if session:
-                session.close()
+                
+    # def update_user_characteristic(self, telegram_id: int, characteristic: str) -> bool:
+    #     """Обновить характеристику пользователя"""
+    #     session = None
+    #     try:
+    #         session = self._Session()
+    #         user = session.query(User).filter(User.telegram_id == telegram_id).first()
+    #         if user:
+    #             user.characteristics = characteristic
+    #             session.commit()
+    #             return True
+    #         return False
+    #     except Exception as e:
+    #         if session: 
+    #             session.rollback()
+    #         logger.error(f"Ошибка при обновлении характеристики: {e}")
+    #         return False
+    #     finally:
+    #         if session:
+    #             session.close()
         
     # --- Методы для работы с заказами ---
-    
-    def get_orders_by_status(self, status_list: list) -> list:
+
+    def create_order(self, order_data: dict) -> Optional[Order]:
+        """Создание нового заказа"""
+        try:
+            with self.session_scope() as session:
+                order = Order(
+                    user_id=order_data['user_id'],
+                    product_id=order_data['product_id'],
+                    quantity=order_data.get('quantity', 1),
+                    weight_grams=order_data.get('weight_grams'),
+                    delivery_type=order_data.get('delivery_type'),
+                    delivery_address=order_data.get('delivery_address'),
+                    ready_at=order_data.get('ready_at'),
+                    total_cost=order_data.get('total_cost'),
+                    payment_type=order_data.get('payment_type'),
+                    payment_status=order_data.get('payment_status', 'Не оплачен'),
+                    admin_notes=order_data.get('admin_notes')
+                )
+                session.add(order)
+                session.flush()  # Получаем ID заказа
+                
+                # Создаем начальный статус заказа
+                initial_status = OrderStatus(
+                    order_id=order.id,
+                    status=OrderStatusEnum.CREATED.value,
+                    created_at=datetime.utcnow()
+                )
+                session.add(initial_status)
+                
+                return order
+        except Exception as e:
+            logger.error(f"Ошибка при создании заказа: {e}")
+            return None
+
+    def get_orders_by_user(self, user_id: int) -> List[dict]:
+        """Получить заказы пользователя"""
+        try:
+            with self.session_scope() as session:
+                orders = session.query(Order).filter_by(user_id=user_id).order_by(Order.created_at.desc()).all()
+                return [
+                    {
+                        'id': order.id,
+                        'product_name': order.product.name,
+                        'quantity': order.quantity,
+                        'total_cost': float(order.total_cost) if order.total_cost else 0,
+                        'created_at': order.created_at,
+                        'delivery_type': order.delivery_type,
+                        'payment_status': order.payment_status,
+                        'current_status': self.get_current_order_status(order.id)
+                    }
+                    for order in orders
+                ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении заказов пользователя: {e}")
+            return []
+
+    def get_current_order_status(self, order_id: int) -> str:
+        """Получить текущий статус заказа"""
+        try:
+            with self.session_scope() as session:
+                last_status = session.query(OrderStatus).filter_by(
+                    order_id=order_id
+                ).order_by(OrderStatus.created_at.desc()).first()
+                
+                return last_status.status if last_status else OrderStatusEnum.CREATED.value
+        except Exception as e:
+            logger.error(f"Ошибка при получении статуса заказа: {e}")
+            return OrderStatusEnum.CREATED.value
+
+    def update_order_status(self, order_id: int, status: OrderStatusEnum, photo_path: str = None) -> bool:
+        """Обновить статус заказа"""
+        try:
+            with self.session_scope() as session:
+                # Создаем новую запись в истории статусов
+                order_status = OrderStatus(
+                    order_id=order_id,
+                    status=status.value,
+                    photo_path=photo_path,
+                    created_at=datetime.utcnow()
+                )
+                session.add(order_status)
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении статуса заказа: {e}")
+            return False
+
+    def get_orders_by_status(self, status: OrderStatusEnum) -> list:
         """Получить заказы по статусу"""
         try:
-            session = self._Session()
-            orders = session.query(Order).filter(Order.status.in_(status_list)).all()
-            return orders
+            with self.session_scope() as session:
+                # Находим заказы с указанным последним статусом
+                subquery = session.query(
+                    OrderStatus.order_id,
+                    sa.func.max(OrderStatus.created_at).label('max_date')
+                ).group_by(OrderStatus.order_id).subquery()
+                
+                orders_with_status = session.query(Order).join(
+                    OrderStatus
+                ).join(
+                    subquery,
+                    sa.and_(
+                        OrderStatus.order_id == subquery.c.order_id,
+                        OrderStatus.created_at == subquery.c.max_date
+                    )
+                ).filter(OrderStatus.status == status.value).all()
+                
+                return orders_with_status
         except Exception as e:
-            logger.error(f"Ошибка при получении заказов: {e}")
+            logger.error(f"Ошибка при получении заказов по статусу: {e}")
             return []
-        finally:
-            if session: 
-                session.close()
 
     def get_orders_statistics(self) -> dict:
         """Получить статистику заказов"""
         try:
-            session = self._Session()
-            result = {
-                'total': session.query(Order).count(),
-                'completed': session.query(Order).filter(Order.status == OrderStatus.COMPLETED).count(),
-                'in_progress': session.query(Order).filter(Order.status == OrderStatus.IN_PROGRESS).count(),
-                'new': session.query(Order).filter(Order.status == OrderStatus.NEW).count(),
-                'total_amount': session.query(func.sum(Order.total_amount)).scalar() or 0
-            }
-            return result
+            with self.session_scope() as session:
+                # Подзапрос для получения последнего статуса каждого заказа
+                subquery = session.query(
+                    OrderStatus.order_id,
+                    sa.func.max(OrderStatus.created_at).label('max_date')
+                ).group_by(OrderStatus.order_id).subquery()
+                
+                # Запрос для получения последних статусов
+                last_statuses = session.query(
+                    OrderStatus.order_id,
+                    OrderStatus.status
+                ).join(
+                    subquery,
+                    sa.and_(
+                        OrderStatus.order_id == subquery.c.order_id,
+                        OrderStatus.created_at == subquery.c.max_date
+                    )
+                ).subquery()
+                
+                # Статистика по статусам
+                status_stats = session.query(
+                    last_statuses.c.status,
+                    sa.func.count(last_statuses.c.order_id)
+                ).group_by(last_statuses.c.status).all()
+                
+                result = {
+                    'total': session.query(Order).count(),
+                    'total_amount': session.query(sa.func.sum(Order.total_cost)).scalar() or 0
+                }
+                
+                # Добавляем статистику по каждому статусу
+                for status_enum in OrderStatusEnum:
+                    result[status_enum.name.lower()] = 0
+                
+                for status_name, count in status_stats:
+                    for status_enum in OrderStatusEnum:
+                        if status_enum.value == status_name:
+                            result[status_enum.name.lower()] = count
+                            break
+                
+                return result
         except Exception as e:
             logger.error(f"Ошибка при получении статистики: {e}")
-            return {'total': 0, 'completed': 0, 'in_progress': 0, 'new': 0, 'total_amount': 0}
-        finally:
-            if session: 
-                session.close()
-    
-
-    def update_order_status(self, order_id: int, status: OrderStatus) -> bool:
-        """Обновить статус заказа"""
-        session = None  
-        try:
-            session = self._Session()
-            order = session.query(Order).filter(Order.id == order_id).first()
-            if order:
-                order.status = status
-                session.commit()
-                return True
-            return False
-        except Exception as e:
-            if session:
-                session.rollback()
-            logger.error(f"Ошибка при обновлении статуса заказа: {e}")
-            return False
-        finally:
-            if session: 
-                session.close()
+            return {'total': 0, 'total_amount': 0}
         
     # --- Raw SQL методы для совместимости ---
     
@@ -402,47 +524,47 @@ class DatabaseManager:
             logger.error(f"Ошибка выполнения raw SQL: {e}")
             raise
     
-    def _raw_postgres(self, query: str, params: tuple):
-        """Raw запрос для PostgreSQL"""
-        import psycopg2
-        from psycopg2.extras import RealDictCursor
+    # def _raw_postgres(self, query: str, params: tuple):
+    #     """Raw запрос для PostgreSQL"""
+    #     import psycopg2
+    #     from psycopg2.extras import RealDictCursor
         
-        conn = psycopg2.connect(
-            host=os.getenv('DB_HOST'),
-            database=os.getenv('DB_NAME'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD'),
-            port=os.getenv('DB_PORT')
-        )
+    #     conn = psycopg2.connect(
+    #         host=os.getenv('DB_HOST'),
+    #         database=os.getenv('DB_NAME'),
+    #         user=os.getenv('DB_USER'),
+    #         password=os.getenv('DB_PASSWORD'),
+    #         port=os.getenv('DB_PORT')
+    #     )
         
-        try:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute(query, params)
-                if query.strip().upper().startswith('SELECT'):
-                    return cur.fetchall()
-                else:
-                    conn.commit()
-                    return cur.rowcount
-        finally:
-            conn.close()
+    #     try:
+    #         with conn.cursor(cursor_factory=RealDictCursor) as cur:
+    #             cur.execute(query, params)
+    #             if query.strip().upper().startswith('SELECT'):
+    #                 return cur.fetchall()
+    #             else:
+    #                 conn.commit()
+    #                 return cur.rowcount
+    #     finally:
+    #         conn.close()
     
-    def _raw_sqlite(self, query: str, params: tuple):
-        """Raw запрос для SQLite"""
-        conn = sqlite3.connect('data/confbot.db')
-        conn.row_factory = sqlite3.Row
+    # def _raw_sqlite(self, query: str, params: tuple):
+    #     """Raw запрос для SQLite"""
+    #     conn = sqlite3.connect('data/confbot.db')
+    #     conn.row_factory = sqlite3.Row
         
-        try:
-            cur = conn.cursor()
-            cur.execute(query, params)
+    #     try:
+    #         cur = conn.cursor()
+    #         cur.execute(query, params)
             
-            if query.strip().upper().startswith('SELECT'):
-                result = cur.fetchall()
-                return [dict(row) for row in result]
-            else:
-                conn.commit()
-                return cur.rowcount
-        finally:
-            conn.close()
+    #         if query.strip().upper().startswith('SELECT'):
+    #             result = cur.fetchall()
+    #             return [dict(row) for row in result]
+    #         else:
+    #             conn.commit()
+    #             return cur.rowcount
+    #     finally:
+    #         conn.close()
     
     def get_user_raw(self, telegram_id: int):
         """Получение пользователя через raw SQL"""
@@ -464,6 +586,45 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"❌ Ошибка подключения к БД: {e}")
             return False
+        
+    # --- Методы для работы с примечаниями к заказам ---
+
+    def add_order_note(self, order_id: int, user_id: int, note_text: str) -> bool:
+        """Добавить примечание к заказу"""
+        try:
+            with self.session_scope() as session:
+                note = OrderNote(
+                    order_id=order_id,
+                    user_id=user_id,
+                    note_text=note_text,
+                    created_at=datetime.utcnow()
+                )
+                session.add(note)
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении примечания к заказу: {e}")
+            return False
+
+    def get_order_notes(self, order_id: int) -> List[dict]:
+        """Получить примечания к заказу"""
+        try:
+            with self.session_scope() as session:
+                notes = session.query(OrderNote).filter_by(
+                    order_id=order_id
+                ).order_by(OrderNote.created_at).all()
+                
+                return [
+                    {
+                        'id': note.id,
+                        'user_name': note.user.full_name,
+                        'note_text': note.note_text,
+                        'created_at': note.created_at
+                    }
+                    for note in notes
+                ]
+        except Exception as e:
+            logger.error(f"Ошибка при получении примечаний к заказу: {e}")
+            return []
     
     # --- Методы для работы с продукцийе и категориями ---
 
