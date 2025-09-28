@@ -57,9 +57,16 @@ class HandlerFactory:
             handler.register_handlers()
             self._handlers.append(handler)
     
+    # def _register_order_handlers(self):
+    #     """Регистрация обработчиков заказов"""
+    #     from .user.order_handlers import OrderHandler
+    #     handler = OrderHandler(self.bot, self.config, self.db_manager)
+    #     handler.register_handlers()
+    #     self._handlers.append(handler)
+
     def _register_order_handlers(self):
         """Регистрация обработчиков заказов"""
-        from .user.order_handlers import OrderHandler
+        from .user.order_handler import OrderHandler
         handler = OrderHandler(self.bot, self.config, self.db_manager)
         handler.register_handlers()
         self._handlers.append(handler)

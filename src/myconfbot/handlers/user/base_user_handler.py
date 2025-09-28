@@ -40,7 +40,9 @@ class BaseUserHandler(ABC):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
         
         buttons = [
-            '🎂 Сделать заказ',
+            '🎂 Продукция',
+            '📋 Мои заказы',
+            '⭐ Избранное'
             '📖 Рецепты', 
             '💼 Услуги',
             '📞 Контакты',

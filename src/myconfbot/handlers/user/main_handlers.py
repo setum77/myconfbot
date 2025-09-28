@@ -41,6 +41,18 @@ class MainHandler(BaseUserHandler):
         @self.bot.message_handler(func=lambda message: message.text == '🐱 Мой профиль')
         def show_my_profile(message: Message):
             self._show_my_profile(message)
+
+        @self.bot.message_handler(func=lambda message: message.text == '🎂 Продукция')
+        def show_products(message: Message):
+            self._show_products(message)
+        
+        @self.bot.message_handler(func=lambda message: message.text == '📋 Мои заказы')
+        def show_my_orders(message: Message):
+            self._show_my_orders(message)
+        
+        @self.bot.message_handler(func=lambda message: message.text == '⭐ Избранное')
+        def show_favorites(message: Message):
+            self._show_favorites(message)
     
     def _register_admin_buttons_handlers(self):
         """Регистрация обработчиков админских кнопок"""
@@ -49,6 +61,22 @@ class MainHandler(BaseUserHandler):
         @self.bot.message_handler(func=lambda message: message.text in admin_buttons)
         def handle_admin_buttons(message: Message):
             self._handle_admin_buttons(message)
+
+    def _show_products(self, message: Message):
+        """Показать продукцию"""
+        from .order_handler import OrderHandler
+        order_handler = OrderHandler(self.bot, self.config, self.db_manager)
+        order_handler.start_order_process(message)
+
+    def _show_my_orders(self, message: Message):
+        """Показать мои заказы"""
+        # TODO: Реализовать позже
+        self.bot.send_message(message.chat.id, "📋 Функция 'Мои заказы' в разработке")
+
+    def _show_favorites(self, message: Message):
+        """Показать избранное"""
+        # TODO: Реализовать позже  
+        self.bot.send_message(message.chat.id, "⭐ Функция 'Избранное' в разработке")
     
     def _register_content_handlers(self):
         """Регистрация обработчиков контента"""

@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 from src.myconfbot.utils.database import db_manager
 from src.myconfbot.handlers import HandlerFactory
+from src.myconfbot.handlers.user.order_handler import OrderHandler
+
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -27,6 +29,8 @@ class ConfectioneryBot:
         self.config = config
         self.handler_factory = HandlerFactory(self.bot, self.config, db_manager)
         self.setup_handlers()
+        order_handler = OrderHandler(self.bot, self.config, db_manager)
+        order_handler.register_handlers()
         logger.info("Бот инициализирован")
 
     def setup_handlers(self):
