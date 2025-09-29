@@ -1,5 +1,6 @@
 # src/myconfbot/handlers/user/order_constants.py
 
+import os
 from telebot import types
 from src.myconfbot.utils.database import db_manager
 
@@ -85,12 +86,13 @@ class OrderConstants:
         keyboard = types.InlineKeyboardMarkup(row_width=1)
         
         for product in products:
-            # Обрезаем описание до 25 символов
+            # Обрезаем описание до 25 символов для кнопки
             short_desc = product['short_description'] or ''
             if len(short_desc) > 25:
                 short_desc = short_desc[:25] + "..."
             
             button_text = f"🎂 {product['name']} - {short_desc}"
+            
             keyboard.add(types.InlineKeyboardButton(
                 button_text,
                 callback_data=f"order_product_{product['id']}"
@@ -102,6 +104,32 @@ class OrderConstants:
         ))
         
         return keyboard
+
+    # @staticmethod
+    # def create_products_keyboard(products, back_callback):
+    #     """Создание клавиатуры для выбора товара"""
+    #     keyboard = types.InlineKeyboardMarkup(row_width=1)
+        
+    #     for product in products:
+    #         # Обрезаем описание до 25 символов
+    #         short_desc = product['short_description'] or ''
+    #         if len(short_desc) > 25:
+    #             short_desc = short_desc[:25] + "..."
+            
+    #         button_text = f"🎂 {product['name']} - {short_desc}"
+            
+    #         # ИСПРАВЛЕНИЕ: Просто создаем кнопку, без попытки отправки медиа
+    #         keyboard.add(types.InlineKeyboardButton(
+    #             button_text,
+    #             callback_data=f"order_product_{product['id']}"
+    #         ))
+        
+    #     keyboard.add(types.InlineKeyboardButton(
+    #         "🔙 Назад к категориям",
+    #         callback_data=back_callback
+    #     ))
+        
+    #     return keyboard
     
     @staticmethod
     def create_product_actions_keyboard(product_id, back_callback):
@@ -121,7 +149,7 @@ class OrderConstants:
         
         keyboard.add(types.InlineKeyboardButton(
             "🔙 Назад к товарам",
-            callback_data=back_callback
+            callback_data=back_callback #  "order_back_categories"
         ))
         
         return keyboard

@@ -1,6 +1,7 @@
 # src/myconfbot/handlers/user/order_handler.py
 
 import logging
+import os
 from datetime import datetime, timedelta
 from telebot import types
 from telebot.types import Message, CallbackQuery
@@ -56,6 +57,14 @@ class OrderHandler(BaseUserHandler):
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('order_cancel_'))
         def handle_order_cancel(callback: CallbackQuery):
             self._handle_order_cancel(callback)
+        
+        @self.bot.callback_query_handler(func=lambda call: call.data == 'order_back_categories')
+        def handle_back_to_categories(callback: CallbackQuery):
+            self._handle_back_to_categories(callback)
+        
+        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('order_back_to_category_'))
+        def handle_back_to_category(callback: CallbackQuery):
+            self._handle_back_to_category(callback)
     
     def _register_order_message_handlers(self):
         """Регистрация обработчиков сообщений для шагов заказа"""
@@ -89,9 +98,54 @@ class OrderHandler(BaseUserHandler):
             parse_mode='HTML',
             reply_markup=keyboard
         )
+
+    def _send_products_media_group(self, chat_id, products):
+        """Отправка медиагруппы с товарами"""
+        media_group = []
+        file_objects = []
+        
+        try:
+            for product in products:
+                # Проверяем наличие основного фото
+                cover_photo_path = product.get('cover_photo_path')
+                if cover_photo_path and os.path.exists(cover_photo_path):
+                    # Формируем подпись
+                    short_desc = product['short_description'] or ''
+                    if len(short_desc) > 25:
+                        short_desc = short_desc[:25] + "..."
+                    
+                    caption = f"🎂 {product['name']}\n{short_desc}"
+                    
+                    # Открываем файл
+                    file_obj = open(cover_photo_path, 'rb')
+                    file_objects.append(file_obj)
+                    
+                    # Добавляем в медиагруппу
+                    media_group.append(types.InputMediaPhoto(
+                        file_obj,
+                        caption=caption,
+                        parse_mode='HTML'
+                    ))
+            
+            # Отправляем медиагруппу если есть фото
+            if media_group:
+                self.bot.send_media_group(chat_id, media_group)
+                return True
+            return False
+            
+        except Exception as e:
+            logger.error(f"Ошибка отправки медиагруппы товаров: {e}")
+            return False
+        finally:
+            # Закрываем все файлы
+            for file_obj in file_objects:
+                try:
+                    file_obj.close()
+                except:
+                    pass
     
     def _handle_category_selection(self, callback: CallbackQuery):
-        """Обработка выбора категории"""
+        """Обработка выбора категории с отправкой фото товаров"""
         try:
             category_id = int(callback.data.replace('order_category_', ''))
             products = self.db_manager.get_products_by_category(category_id)
@@ -104,15 +158,27 @@ class OrderHandler(BaseUserHandler):
             categories = self.db_manager.get_all_categories()
             category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), 'Неизвестно')
             
-            keyboard = OrderConstants.create_products_keyboard(
-                products=products,
-                back_callback="order_back_categories"
+            # Сначала отправляем заголовок категории
+            self.bot.send_message(
+                callback.message.chat.id,
+                f"📂 <b>Товары в категории:</b> {category_name}",
+                parse_mode='HTML'
             )
             
-            self.bot.edit_message_text(
-                chat_id=callback.message.chat.id,
-                message_id=callback.message.message_id,
-                text=f"📂 <b>Товары в категории:</b> {category_name}\n\nВыберите товар:",
+            # Затем для каждого товара отправляем фото + кнопку выбора
+            for product in products:
+                self._send_product_with_button(callback.message.chat.id, product)
+            
+            # В конце отправляем кнопку "Назад"
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.add(types.InlineKeyboardButton(
+                "🔙 Назад к категориям",
+                callback_data="order_back_categories"
+            ))
+            
+            self.bot.send_message(
+                callback.message.chat.id,
+                "⬆️ <b>Выберите товар из списка выше:</b>",
                 parse_mode='HTML',
                 reply_markup=keyboard
             )
@@ -122,6 +188,80 @@ class OrderHandler(BaseUserHandler):
         except Exception as e:
             logger.error(f"Ошибка при выборе категории: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при выборе категории")
+
+    def _send_product_with_button(self, chat_id, product):
+        """Отправка товара с фото и кнопкой выбора"""
+        try:
+            # Формируем подпись
+            short_desc = product['short_description'] or ''
+            if len(short_desc) > 60:
+                short_desc = short_desc[:60] + "..."
+            
+            caption = f"🎂 <b>{product['name']}</b>\n{short_desc}\n💰 Цена: {product['price']} руб."
+            
+            # Создаем кнопку для выбора товара
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.add(types.InlineKeyboardButton(
+                "🔍 Подробнее...",
+                callback_data=f"order_product_{product['id']}"
+            ))
+            
+            # Проверяем наличие фото
+            cover_photo_path = product.get('cover_photo_path')
+            if cover_photo_path and os.path.exists(cover_photo_path):
+                # Отправляем фото с кнопкой
+                with open(cover_photo_path, 'rb') as photo:
+                    self.bot.send_photo(
+                        chat_id,
+                        photo,
+                        caption=caption,
+                        parse_mode='HTML',
+                        reply_markup=keyboard
+                    )
+            else:
+                # Если фото нет, отправляем только текст с кнопкой
+                self.bot.send_message(
+                    chat_id,
+                    caption,
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+                
+        except Exception as e:
+            logger.error(f"Ошибка отправки товара {product['id']}: {e}")
+    
+    # def _handle_category_selection(self, callback: CallbackQuery):
+    #     """Обработка выбора категории"""
+    #     try:
+    #         category_id = int(callback.data.replace('order_category_', ''))
+    #         products = self.db_manager.get_products_by_category(category_id)
+            
+    #         if not products:
+    #             self.bot.answer_callback_query(callback.id, "📭 В этой категории нет товаров")
+    #             return
+            
+    #         # Получаем информацию о категории
+    #         categories = self.db_manager.get_all_categories()
+    #         category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), 'Неизвестно')
+            
+    #         keyboard = OrderConstants.create_products_keyboard(
+    #             products=products,
+    #             back_callback="order_back_categories"
+    #         )
+            
+    #         self.bot.edit_message_text(
+    #             chat_id=callback.message.chat.id,
+    #             message_id=callback.message.message_id,
+    #             text=f"📂 <b>Товары в категории:</b> {category_name}\n\nВыберите товар:",
+    #             parse_mode='HTML',
+    #             reply_markup=keyboard
+    #         )
+            
+    #         self.bot.answer_callback_query(callback.id)
+            
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при выборе категории: {e}")
+    #         self.bot.answer_callback_query(callback.id, "❌ Ошибка при выборе категории")
     
     def _handle_product_selection(self, callback: CallbackQuery):
         """Обработка выбора товара"""
@@ -140,7 +280,8 @@ class OrderHandler(BaseUserHandler):
             # Отправляем кнопки действий отдельным сообщением
             self.bot.send_message(
                 callback.message.chat.id,
-                "⬆️ Выберите действие:",
+                "⬇️ Выберите действие:",
+                parse_mode='HTML',
                 reply_markup=keyboard
             )
             
@@ -437,6 +578,62 @@ class OrderHandler(BaseUserHandler):
             text="❌ <b>Заказ отменен</b>",
             parse_mode='HTML'
         )
+
+    def _handle_back_to_categories(self, callback: CallbackQuery):
+        """Обработка возврата к списку категорий"""
+        try:
+            # Просто заново запускаем процесс заказа, который покажет категории
+            self.start_order_process(callback.message)
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к категориям: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
+    def _handle_back_to_category(self, callback: CallbackQuery):
+        """Обработка возврата к товарам категории"""
+        try:
+            category_id = int(callback.data.replace('order_back_to_category_', ''))
+            products = self.db_manager.get_products_by_category(category_id)
+            
+            if not products:
+                self.bot.answer_callback_query(callback.id, "📭 В этой категории нет товаров")
+                return
+            
+            # Получаем информацию о категории
+            categories = self.db_manager.get_all_categories()
+            category_name = next((cat['name'] for cat in categories if cat['id'] == category_id), 'Неизвестно')
+            
+            # Сначала отправляем заголовок категории
+            self.bot.send_message(
+                callback.message.chat.id,
+                f"📂 <b>Товары в категории:</b> {category_name}",
+                parse_mode='HTML'
+            )
+            
+            # Затем для каждого товара отправляем фото + кнопку выбора
+            for product in products:
+                self._send_product_with_button(callback.message.chat.id, product)
+            
+            # В конце отправляем кнопку "Назад"
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.add(types.InlineKeyboardButton(
+                "🔙 Назад к категориям",
+                callback_data="order_back_categories"
+            ))
+            
+            self.bot.send_message(
+                callback.message.chat.id,
+                "⬆️ <b>Выберите товар из списка выше:</b>",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к категории: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
     
     def _create_order_in_db(self, user_id: int, order_data: dict) -> bool:
         """Создание заказа в базе данных"""

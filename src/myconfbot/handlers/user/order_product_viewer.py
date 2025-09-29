@@ -32,9 +32,9 @@ class OrderProductViewer:
         # Получаем фотографии товара
         photos = self.db_manager.get_product_photos(product_id)
         
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton("🔙 В меню продукции",
-            callback_data=f"view_back_products"))
+        # keyboard = types.InlineKeyboardMarkup()
+        # keyboard.add(types.InlineKeyboardButton("🔙 К выбору продукции",
+        #     callback_data=f"order_back_to_category_{product_id}"))
         
         # Если есть фото, отправляем их все в одной медиагруппе
         if photos and any(os.path.exists(p['photo_path']) for p in photos):
@@ -65,12 +65,12 @@ class OrderProductViewer:
                     # Отправляем медиагруппу. Нужно будет реализовать в случае если фотографий >10
                     self.bot.send_media_group(message.chat.id, media_group)
                     
-                    # Отправляем клавиатуру отдельным сообщением
-                    self.bot.send_message(
-                        message.chat.id,
-                        "📸 Все фотографии товара",
-                        reply_markup=keyboard
-                    )
+                    # # Отправляем клавиатуру отдельным сообщением
+                    # self.bot.send_message(
+                    #     message.chat.id,
+                    #     #"📸 Все фотографии товара",
+                    #     reply_markup=keyboard
+                    # )
                     
             except Exception as e:
                 logger.error(f"Ошибка отправки медиагруппы: {e}")
@@ -79,7 +79,7 @@ class OrderProductViewer:
                     message.chat.id,
                     product_text,
                     parse_mode='HTML',
-                    reply_markup=keyboard
+                    # reply_markup=keyboard
                 )
             finally:
                 # Закрываем все файлы
@@ -94,7 +94,7 @@ class OrderProductViewer:
                 message.chat.id,
                 product_text,
                 parse_mode='HTML',
-                reply_markup=keyboard
+                # reply_markup=keyboard
             )
         
         # self.bot.answer_callback_query(callback.id)
@@ -103,23 +103,23 @@ class OrderProductViewer:
         """Форматирование детальной информации о товаре (ТОЛЬКО текст)"""
         
         product_text = "🎂 <b>Информация о товаре</b>\n\n"
-        product_text += f"🆔 <b>ID:</b> {product['id']}\n"
+        # product_text += f"🆔 <b>ID:</b> {product['id']}\n"
         product_text += f"📝 <b>Название:</b> {product['name']}\n"
         product_text += f"📁 <b>Категория:</b> {product['category_name']}\n"
         product_text += f"📄 <b>Описание:</b> {product['short_description'] or 'Не указано'}\n"
-        product_text += f"🔄 <b>Доступен:</b> {'✅ Да' if product['is_available'] else '❌ Нет'}\n"
+        product_text += f"🔄 <b>Доступен для заказа:</b> {'✅ Да' if product['is_available'] else '❌ Нет'}\n"
         product_text += f"⚖️ <b>Количество:</b> {product['quantity']} {product['measurement_unit']}\n"
         product_text += f"💰 <b>Цена:</b> {product['price']} руб.\n"
         product_text += f"💳 <b>Условия оплаты:</b> {product['prepayment_conditions'] or 'Не указано'}\n"
-        product_text += f"📅 <b>Создан:</b> {product['created_at'].strftime('%d.%m.%Y %H:%M')}\n"
-        product_text += f"🔄 <b>Обновлен:</b> {product['updated_at'].strftime('%d.%m.%Y %H:%M') if product['updated_at'] else 'Не обновлялся'}\n"
+        # product_text += f"📅 <b>Создан:</b> {product['created_at'].strftime('%d.%m.%Y %H:%M')}\n"
+        # product_text += f"🔄 <b>Обновлен:</b> {product['updated_at'].strftime('%d.%m.%Y %H:%M') if product['updated_at'] else 'Не обновлялся'}\n"
         
-        # Информация о фотографиях
-        photos = self.db_manager.get_product_photos(product['id'])
-        if photos:
-            product_text += f"\n📸 <b>Фотографии:</b> {len(photos)} шт.\n"
-        else:
-            product_text += "\n📸 <b>Фотографии:</b> Нет\n"
+        # # Информация о фотографиях
+        # photos = self.db_manager.get_product_photos(product['id'])
+        # if photos:
+        #     product_text += f"\n📸 <b>Фотографии:</b> {len(photos)} шт.\n"
+        # else:
+        #     product_text += "\n📸 <b>Фотографии:</b> Нет\n"
         
         return product_text
 
