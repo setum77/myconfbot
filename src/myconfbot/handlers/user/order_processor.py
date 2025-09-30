@@ -98,10 +98,11 @@ class OrderProcessor:
         if is_weight_based:
             question += f"⚖️ <b>Товар измеряется по весу</b>\n"
             question += f"💰 Цена: {product['price']} руб. за {product['quantity']} {measurement_unit}\n\n"
+            question += " \n\n" 
             question += "➡️ <b>Введите вес в граммах:</b>"
         else:
-            question += f"💰 Цена: {product['price']} руб. за {product['quantity']} {measurement_unit}\n"
-            #question += f"📦 Доступно: {product['quantity']} {measurement_unit}\n\n"
+            question += f"💰 Цена: {product['price']} руб. за {product['quantity']} {measurement_unit}\n\n"
+            question += " \n\n"            
             question += "➡️ <b>Введите количество:</b>"
         
         keyboard = OrderConstants.create_back_keyboard("order_cancel_quantity")
@@ -163,14 +164,7 @@ class OrderProcessor:
                 if quantity <= 0:
                     self.bot.send_message(message.chat.id, "❌ Введите положительное число")
                     return
-                
-                if quantity > product['quantity']:
-                    self.bot.send_message(
-                        message.chat.id,
-                        f"❌ Недостаточно товара. Доступно: {product['quantity']}"
-                    )
-                    return
-                
+                                               
                 # Сохраняем количество
                 self.order_states.update_order_data(
                     message.from_user.id,
@@ -192,7 +186,7 @@ class OrderProcessor:
         keyboard = types.InlineKeyboardMarkup(row_width=3)
         
         # Предлагаем ближайшие даты
-        for i in range(1, 4):
+        for i in range(1, 6):
             date = min_date + timedelta(days=i)
             keyboard.add(types.InlineKeyboardButton(
                 date.strftime("%d.%m"),
@@ -328,9 +322,9 @@ class OrderProcessor:
             message.chat.id,
             "🚚 <b>Информация о доставке</b>\n\n"
             "🍪 <b>Внимание: пока доступен только самовывоз</b>\n\n"
-            "Мы пока не осуществляем доставку, но ваш заказ ждёт вас в нашем пункте выдачи — "
+            "Мы пока не осуществляем доставку, но ваш заказ будет ожидать в нашем пункте выдачи"
             "с радостью подготовим всё с учётом ваших пожеланий!\n\n"
-            "✨ Детали заказа можно указать в примечаниях к товару. Мы всё учтём!",
+            "✨ Детали заказа можно указать в примечаниях к товару. Мы всё учтём!\n\n",
             parse_mode='HTML',
             reply_markup=keyboard
         )
@@ -460,7 +454,9 @@ class OrderProcessor:
             weight_grams = order_data.get('weight_grams', 0)
             approximate_cost = float(product['price']) * weight_grams / float(product['quantity'])
             quantity_display = f"{weight_grams} г"
-            cost_note = " (примерная стоимость, будет уточнена)"
+            cost_note = "  Стоимость, указанная выше, является ориентировочной и рассчитана на основе стандартных параметров"
+            cost_note += "(вес, декор, базовые ингредиенты)."
+            cost_note += "Окончательная цена будет уточнена после согласования всех деталей"
         else:
             quantity = order_data.get('quantity', 0)
             approximate_cost = float(product['price']) * quantity
