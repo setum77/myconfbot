@@ -346,7 +346,7 @@ class OrderProcessor:
             self.order_states.update_order_data(
                 callback.from_user.id,
                 ready_time=time_str,
-                state='order_delivery'
+                state='order_delivery_info'
             )
             
             # Переходим к шагу 5: Доставка
@@ -415,7 +415,7 @@ class OrderProcessor:
             self.order_states.update_order_data(
                 message.from_user.id,
                 ready_time=time_str,
-                state='order_delivery'
+                state='order_delivery_info'
             )
             
             # Переходим к шагу 5: Доставка
@@ -427,6 +427,25 @@ class OrderProcessor:
                 message.chat.id,
                 "❌ Ошибка при обработке времени. Попробуйте еще раз."
             )
+    
+    def _ask_delivery(self, message: Message):
+        """Шаг 5: Информация о доставке"""
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(
+            "✅ Понятно, продолжаем",
+            callback_data="order_delivery_continue"
+        ))
+        
+        self.bot.send_message(
+            message.chat.id,
+            "🚚 <b>Информация о доставке</b>\n\n"
+            "🍪 <b>Внимание: пока доступен только самовывоз</b>\n\n"
+            "Мы пока не осуществляем доставку, но ваш заказ будет ожидать в нашем пункте выдачи\n\n"
+            "С радостью подготовим всё с учётом ваших пожеланий!\n\n"
+            "✨ Детали заказа можно указать в примечаниях к товару. Мы всё учтём!\n\n",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
 
     def process_delivery_continue(self, callback: CallbackQuery):
         """Продолжение после информации о доставке"""
@@ -440,7 +459,7 @@ class OrderProcessor:
             state='order_payment'
         )
         
-        # Переходим к шагу 5: Оплата
+        # Переходим к шагу 6: Оплата
         order_data = self.order_states.get_order_data(callback.from_user.id)
         self._ask_payment(callback.message, order_data['product_id'])
         self.bot.answer_callback_query(callback.id)

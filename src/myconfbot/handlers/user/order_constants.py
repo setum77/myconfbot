@@ -25,6 +25,7 @@ class OrderConstants:
         'SELECTING_DATE_CUSTOM': 'order_date_custom',
         'SELECTING_TIME': 'order_time',  # НОВОЕ: выбор времени
         'SELECTING_TIME_CUSTOM': 'order_time_custom',  # НОВОЕ: ручной ввод времени
+        'DELIVERY_INFO': 'order_delivery_info',
         'SELECTING_DELIVERY': 'order_delivery',
         'SELECTING_PAYMENT': 'order_payment',
         'ADDING_NOTES': 'order_notes',

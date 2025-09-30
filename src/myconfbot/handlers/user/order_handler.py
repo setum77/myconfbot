@@ -738,15 +738,20 @@ class OrderHandler(BaseUserHandler):
     #     )
 
     def _handle_back_to_date(self, callback: CallbackQuery):
-        """Возврат к выбору даты"""
+        """Обработка возврата к выбору даты"""
         try:
             user_id = callback.from_user.id
             order_data = self.order_states.get_order_data(user_id)
             
             if order_data:
-                product_id = order_data['product_id']
-                self.order_states.set_order_step(user_id, 'order_date')
-                self.order_processor._ask_date(callback.message, product_id)
+                # Удаляем сохраненное время при возврате
+                self.order_states.update_order_data(
+                    user_id,
+                    ready_time=None,
+                    state='order_date'
+                )
+                # Запрашиваем дату заново
+                self.order_processor._ask_date(callback.message, order_data['product_id'])
             
             self.bot.answer_callback_query(callback.id)
             
