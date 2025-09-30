@@ -48,13 +48,9 @@ class OrderHandler(BaseUserHandler):
     
     def _register_order_callbacks(self):
         """Регистрация callback обработчиков"""
-
-        # ОТЛАДОЧНЫЙ ОБРАБОТЧИК - ДЛЯ ДИАГНОСТИКИ
-        # @self.bot.callback_query_handler(func=lambda call: True)
-        # def debug_all_callbacks(callback: CallbackQuery):
-        #     if callback.from_user.is_bot:
-        #         return
-        #     logger.info(f"🔍 DEBUG CALLBACK: user_id={callback.from_user.id}, data='{callback.data}'")
+        @self.bot.callback_query_handler(func=lambda call: call.data == 'order_back_quantity')
+        def handle_back_to_quantity(callback: CallbackQuery):
+            self._handle_back_to_quantity(callback)
 
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('order_date_'))
         def handle_order_date(callback: CallbackQuery):
@@ -79,6 +75,10 @@ class OrderHandler(BaseUserHandler):
         @self.bot.callback_query_handler(func=lambda call: call.data == 'order_back_date')
         def handle_back_to_date(callback: CallbackQuery):
             self._handle_back_to_date(callback)
+
+        @self.bot.callback_query_handler(func=lambda call: call.data == 'order_back_delivery')
+        def handle_back_to_delivery(callback: CallbackQuery):
+            self._handle_back_to_delivery(callback)
         
         @self.bot.callback_query_handler(func=lambda call: call.data == 'order_delivery_continue')
         def handle_delivery_continue(callback: CallbackQuery):
@@ -103,6 +103,14 @@ class OrderHandler(BaseUserHandler):
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('order_back_to_category_'))
         def handle_back_to_category(callback: CallbackQuery):
             self._handle_back_to_category(callback)
+
+        @self.bot.callback_query_handler(func=lambda call: call.data == 'order_back_payment')
+        def handle_back_to_payment(callback: CallbackQuery):
+            self._handle_back_to_payment(callback)
+
+        @self.bot.callback_query_handler(func=lambda call: call.data == 'order_cancel_quantity')
+        def handle_cancel_quantity(callback: CallbackQuery):
+            self._handle_cancel_quantity(callback)
 
 
 
@@ -463,279 +471,6 @@ class OrderHandler(BaseUserHandler):
         except Exception as e:
             logger.error(f"Ошибка при добавлении в избранное: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка")
-    
-    # def _handle_order_start(self, callback: CallbackQuery):
-    #     """Начало оформления заказа"""
-    #     try:
-    #         product_id = int(callback.data.replace('order_start_', ''))
-    #         user_id = callback.from_user.id
-            
-    #         # Начинаем процесс заказа
-    #         self.order_states.start_order(user_id, product_id)
-            
-    #         # Переходим к первому шагу - количество
-    #         self._ask_quantity(callback.message, product_id)
-            
-    #         self.bot.answer_callback_query(callback.id)
-            
-    #     except Exception as e:
-    #         logger.error(f"Ошибка при начале заказа: {e}")
-    #         self.bot.answer_callback_query(callback.id, "❌ Ошибка при начале заказа")
-    
-    # def _ask_quantity(self, message: Message, product_id: int):
-    #     """Запрос количества товара"""
-    #     product = self.db_manager.get_product_by_id(product_id)
-        
-    #     if not product:
-    #         self.bot.send_message(message.chat.id, "❌ Товар не найден")
-    #         return
-        
-    #     keyboard = OrderConstants.create_back_keyboard("order_cancel_quantity")
-        
-    #     question = f"🎂 <b>{product['name']}</b>\n\n"
-    #     question += f"💰 Цена: {product['price']} руб. за {product['measurement_unit']}\n"
-    #     question += f"📦 Доступно: {product['quantity']} {product['measurement_unit']}\n\n"
-    #     question += "➡️ <b>Введите количество:</b>"
-        
-    #     self.bot.send_message(
-    #         message.chat.id,
-    #         question,
-    #         parse_mode='HTML',
-    #         reply_markup=keyboard
-    #     )
-    
-    # def _handle_order_step(self, callback: CallbackQuery):
-    #     """Обработка шагов заказа через callback"""
-    #     # Можно использовать для быстрого выбора дат и т.д.
-    #     pass
-    
-    # def _handle_order_message(self, message: Message):
-    #     """Обработка сообщений в процессе заказа"""
-    #     user_id = message.from_user.id
-    #     order_data = self.order_states.get_order_data(user_id)
-        
-    #     if not order_data:
-    #         return
-        
-    #     current_state = order_data.get('state')
-        
-    #     if current_state == 'order_quantity':
-    #         self._process_quantity_input(message, order_data)
-    #     elif current_state == 'order_date':
-    #         self._process_date_input(message, order_data)
-    #     elif current_state == 'order_delivery':
-    #         self._process_delivery_input(message, order_data)
-    #     elif current_state == 'order_payment':
-    #         self._process_payment_input(message, order_data)
-    #     elif current_state == 'order_notes':
-    #         self._process_notes_input(message, order_data)
-    
-    # def _process_quantity_input(self, message: Message, order_data: dict):
-    #     """Обработка ввода количества"""
-    #     try:
-    #         quantity = float(message.text)
-    #         product_id = order_data['product_id']
-    #         product = self.db_manager.get_product_by_id(product_id)
-            
-    #         if not product:
-    #             self.bot.send_message(message.chat.id, "❌ Товар не найден")
-    #             self.order_states.cancel_order(message.from_user.id)
-    #             return
-            
-    #         # Проверяем доступное количество
-    #         if quantity <= 0:
-    #             self.bot.send_message(message.chat.id, "❌ Введите положительное число")
-    #             return
-            
-    #         if quantity > product['quantity']:
-    #             self.bot.send_message(
-    #                 message.chat.id,
-    #                 f"❌ Недостаточно товара. Доступно: {product['quantity']}"
-    #             )
-    #             return
-            
-    #         # Сохраняем количество
-    #         self.order_states.update_order_data(
-    #             message.from_user.id,
-    #             quantity=quantity,
-    #             state='order_date'
-    #         )
-            
-    #         # Переходим к следующему шагу - дата
-    #         self._ask_date(message, product_id)
-            
-    #     except ValueError:
-    #         self.bot.send_message(message.chat.id, "❌ Введите число")
-    
-    # def _ask_date(self, message: Message, product_id: int):
-    #     """Запрос даты приготовления"""
-    #     # Минимальная дата - завтра
-    #     min_date = datetime.now() + timedelta(days=1)
-        
-    #     keyboard = types.InlineKeyboardMarkup(row_width=3)
-        
-    #     # Предлагаем ближайшие даты
-    #     for i in range(1, 4):
-    #         date = min_date + timedelta(days=i)
-    #         keyboard.add(types.InlineKeyboardButton(
-    #             date.strftime("%d.%m"),
-    #             callback_data=f"order_date_{date.strftime('%Y-%m-%d')}"
-    #         ))
-        
-    #     keyboard.add(types.InlineKeyboardButton(
-    #         "📅 Другая дата",
-    #         callback_data="order_custom_date"
-    #     ))
-        
-    #     keyboard.add(types.InlineKeyboardButton(
-    #         "🔙 Назад",
-    #         callback_data="order_back_quantity"
-    #     ))
-        
-    #     self.bot.send_message(
-    #         message.chat.id,
-    #         "📅 <b>Выберите дату приготовления:</b>\n\n"
-    #         "Минимальный срок - завтра.",
-    #         parse_mode='HTML',
-    #         reply_markup=keyboard
-    #     )
-    
-    # def _process_date_input(self, message: Message, order_data: dict):
-    #     """Обработка ввода даты"""
-    #     # Реализация для ручного ввода даты
-    #     pass
-    
-    # def _ask_delivery(self, message: Message):
-    #     """Запрос способа доставки"""
-    #     keyboard = types.InlineKeyboardMarkup(row_width=2)
-        
-    #     keyboard.add(
-    #         types.InlineKeyboardButton("🚗 Доставка", callback_data="order_delivery_home"),
-    #         types.InlineKeyboardButton("🏃 Самовывоз", callback_data="order_delivery_pickup")
-    #     )
-        
-    #     keyboard.add(types.InlineKeyboardButton(
-    #         "🔙 Назад",
-    #         callback_data="order_back_date"
-    #     ))
-        
-    #     self.bot.send_message(
-    #         message.chat.id,
-    #         "🚚 <b>Выберите способ получения:</b>",
-    #         parse_mode='HTML',
-    #         reply_markup=keyboard
-    #     )
-    
-    # def _ask_payment(self, message: Message):
-    #     """Запрос способа оплаты"""
-    #     keyboard = types.InlineKeyboardMarkup(row_width=2)
-        
-    #     keyboard.add(
-    #         types.InlineKeyboardButton("💳 Онлайн", callback_data="order_payment_online"),
-    #         types.InlineKeyboardButton("💵 При получении", callback_data="order_payment_cash")
-    #     )
-        
-    #     keyboard.add(types.InlineKeyboardButton(
-    #         "🔙 Назад", 
-    #         callback_data="order_back_delivery"
-    #     ))
-        
-    #     self.bot.send_message(
-    #         message.chat.id,
-    #         "💳 <b>Выберите способ оплаты:</b>",
-    #         parse_mode='HTML',
-    #         reply_markup=keyboard
-    #     )
-    
-    # def _ask_notes(self, message: Message):
-    #     """Запрос примечаний"""
-    #     keyboard = OrderConstants.create_back_keyboard("order_back_payment")
-        
-    #     self.bot.send_message(
-    #         message.chat.id,
-    #         "📝 <b>Добавьте примечания к заказу:</b>\n\n"
-    #         "Например: особые пожелания, аллергии и т.д.\n"
-    #         "Или отправьте '-' если примечаний нет.",
-    #         parse_mode='HTML',
-    #         reply_markup=keyboard
-    #     )
-    
-    # def _show_order_summary(self, message: Message, order_data: dict):
-    #     """Показать сводку заказа"""
-    #     product = self.db_manager.get_product_by_id(order_data['product_id'])
-        
-    #     if not product:
-    #         self.bot.send_message(message.chat.id, "❌ Товар не найден")
-    #         return
-        
-    #     total_cost = float(product['price']) * order_data['quantity']
-        
-    #     summary = "📋 <b>Сводка заказа</b>\n\n"
-    #     summary += f"🎂 <b>Товар:</b> {product['name']}\n"
-    #     summary += f"📦 <b>Количество:</b> {order_data['quantity']} {product['measurement_unit']}\n"
-    #     summary += f"💰 <b>Цена за единицу:</b> {product['price']} руб.\n"
-    #     summary += f"💵 <b>Общая стоимость:</b> {total_cost:.2f} руб.\n"
-    #     summary += f"📅 <b>Дата приготовления:</b> {order_data.get('ready_date', 'Не указана')}\n"
-    #     summary += f"🚚 <b>Доставка:</b> {order_data.get('delivery_type', 'Не указана')}\n"
-    #     summary += f"💳 <b>Оплата:</b> {order_data.get('payment_type', 'Не указана')}\n"
-    #     summary += f"📝 <b>Примечания:</b> {order_data.get('notes', 'Нет')}\n"
-        
-    #     keyboard = OrderConstants.create_order_confirmation_keyboard("temp_id")
-        
-    #     self.bot.send_message(
-    #         message.chat.id,
-    #         summary,
-    #         parse_mode='HTML',
-    #         reply_markup=keyboard
-    #     )
-    
-    # def _handle_order_confirm(self, callback: CallbackQuery):
-    #     """Подтверждение заказа"""
-    #     try:
-    #         user_id = callback.from_user.id
-    #         order_data = self.order_states.complete_order(user_id)
-            
-    #         if not order_data:
-    #             self.bot.answer_callback_query(callback.id, "❌ Данные заказа не найдены")
-    #             return
-            
-    #         # Создаем заказ в базе данных
-    #         order_success = self._create_order_in_db(user_id, order_data)
-            
-    #         if order_success:
-    #             self.bot.answer_callback_query(callback.id, "✅ Заказ создан!")
-                
-    #             # Показываем подтверждение
-    #             self.bot.edit_message_text(
-    #                 chat_id=callback.message.chat.id,
-    #                 message_id=callback.message.message_id,
-    #                 text="✅ <b>Заказ успешно создан!</b>\n\n"
-    #                      "Мы свяжемся с вами для уточнения деталей.",
-    #                 parse_mode='HTML'
-    #             )
-                
-    #             # TODO: Уведомление администраторов
-                
-    #         else:
-    #             self.bot.answer_callback_query(callback.id, "❌ Ошибка при создании заказа")
-                
-    #     except Exception as e:
-    #         logger.error(f"Ошибка при подтверждении заказа: {e}")
-    #         self.bot.answer_callback_query(callback.id, "❌ Ошибка при создании заказа")
-    
-    # def _handle_order_cancel(self, callback: CallbackQuery):
-    #     """Отмена заказа"""
-    #     user_id = callback.from_user.id
-    #     self.order_states.cancel_order(user_id)
-        
-    #     self.bot.answer_callback_query(callback.id, "❌ Заказ отменен")
-        
-    #     self.bot.edit_message_text(
-    #         chat_id=callback.message.chat.id,
-    #         message_id=callback.message.message_id,
-    #         text="❌ <b>Заказ отменен</b>",
-    #         parse_mode='HTML'
-    #     )
 
     def _handle_back_to_date(self, callback: CallbackQuery):
         """Обработка возврата к выбору даты"""
@@ -831,36 +566,86 @@ class OrderHandler(BaseUserHandler):
         except Exception as e:
             logger.error(f"Ошибка при возврате к категории: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка")
-    
-    # def _create_order_in_db(self, user_id: int, order_data: dict) -> bool:
-    #     """Создание заказа в базе данных"""
-    #     try:
-    #         product = self.db_manager.get_product_by_id(order_data['product_id'])
+
+
+    def _handle_back_to_quantity(self, callback: CallbackQuery):
+        """Возврат к вводу количества"""
+        try:
+            user_id = callback.from_user.id
+            order_data = self.order_states.get_order_data(user_id)
             
-    #         if not product:
-    #             return False
+            if order_data:
+                # Возвращаемся к шагу количества
+                self.order_states.update_order_data(
+                    user_id,
+                    state='order_quantity'
+                )
+                # Запрашиваем количество заново
+                self.order_processor._ask_quantity(callback.message, order_data['product_id'])
             
-    #         total_cost = float(product['price']) * order_data['quantity']
+            self.bot.answer_callback_query(callback.id)
             
-    #         order_db_data = {
-    #             'user_id': user_id,
-    #             'product_id': order_data['product_id'],
-    #             'quantity': order_data['quantity'],
-    #             'total_cost': total_cost,
-    #             'delivery_type': order_data.get('delivery_type', 'Не указано'),
-    #             'payment_type': order_data.get('payment_type', 'Не указано'),
-    #             'admin_notes': order_data.get('notes', ''),
-    #             'ready_at': order_data.get('ready_date')
-    #         }
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к количеству: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
+    def _handle_back_to_delivery(self, callback: CallbackQuery):
+        """Возврат к информации о доставке"""
+        try:
+            user_id = callback.from_user.id
+            order_data = self.order_states.get_order_data(user_id)
             
-    #         # Используем существующий метод создания заказа
-    #         order = self.db_manager.create_order(order_db_data)
-    #         return order is not None
+            if order_data:
+                # Возвращаемся к шагу доставки
+                self.order_states.update_order_data(
+                    user_id,
+                    state='order_delivery_info'
+                )
+                # Показываем информацию о доставке заново
+                self.order_processor._ask_delivery(callback.message)
             
-    #     except Exception as e:
-    #         logger.error(f"Ошибка при создании заказа в БД: {e}")
-    #         return False
-    
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к доставке: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
+    def _handle_back_to_payment(self, callback: CallbackQuery):
+        """Возврат к информации об оплате"""
+        try:
+            user_id = callback.from_user.id
+            order_data = self.order_states.get_order_data(user_id)
+            
+            if order_data:
+                # Возвращаемся к шагу оплаты
+                self.order_states.update_order_data(
+                    user_id,
+                    state='order_payment'
+                )
+                # Показываем информацию об оплате заново
+                self.order_processor._ask_payment(callback.message, order_data['product_id'])
+            
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к оплате: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
+    def _handle_cancel_quantity(self, callback: CallbackQuery):
+        """Отмена на шаге ввода количества"""
+        try:
+            user_id = callback.from_user.id
+            self.order_states.cancel_order(user_id)
+            
+            self.bot.answer_callback_query(callback.id, "❌ Заказ отменен")
+            
+            # Возвращаем к категориям
+            self.start_order_process(callback.message)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при отмене количества: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+        
     def _get_product_category_id(self, product_id: int) -> int:
         """Получить ID категории товара"""
         product = self.db_manager.get_product_by_id(product_id)
