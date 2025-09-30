@@ -225,17 +225,46 @@ class OrderProcessor:
             self.order_states.update_order_data(
                 callback.from_user.id,
                 ready_date=selected_date.isoformat(),
-                state='order_delivery'
+                state='order_time'  # Теперь переходим к выбору времени, а не доставки
             )
             
-            # Переходим к шагу 4: Доставка
-            self._ask_delivery(callback.message)
+            # Переходим к шагу 4: Время
+            self._ask_time(callback.message)
             
             self.bot.answer_callback_query(callback.id)
             
         except Exception as e:
             logger.error(f"Ошибка при выборе даты: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при выборе даты")
+
+    # Обновить метод process_custom_date_input для перехода к выбору времени
+    def process_custom_date_input(self, message: Message, order_data: dict):
+        """Обработка ручного ввода даты"""
+        try:
+            date_str = message.text.strip()
+            selected_date = datetime.strptime(date_str, '%d.%m.%Y')
+            
+            # Проверяем что дата не в прошлом
+            min_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            if selected_date < min_date:
+                self.bot.send_message(message.chat.id, "❌ Дата не может быть в прошлом")
+                return
+            
+            # Сохраняем дату
+            self.order_states.update_order_data(
+                message.from_user.id,
+                ready_date=selected_date.isoformat(),
+                state='order_time'  # Теперь переходим к выбору времени, а не доставки
+            )
+            
+            # Переходим к шагу 4: Время
+            self._ask_time(message)
+            
+        except ValueError:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например: 25.12.2024)"
+            )
 
     def handle_custom_date(self, callback: CallbackQuery):
         """Обработка запроса ручного ввода даты"""
@@ -258,76 +287,146 @@ class OrderProcessor:
         
         self.bot.answer_callback_query(callback.id)
 
-    def process_custom_date_input(self, message: Message, order_data: dict):
-        """Обработка ручного ввода даты"""
-        try:
-            date_str = message.text.strip()
-            selected_date = datetime.strptime(date_str, '%d.%m.%Y')
-            
-            # Проверяем что дата не в прошлом
-            min_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            if selected_date < min_date:
-                self.bot.send_message(message.chat.id, "❌ Дата не может быть в прошлом")
-                return
-            
-            # Сохраняем дату
-            self.order_states.update_order_data(
-                message.from_user.id,
-                ready_date=selected_date.isoformat(),
-                state='order_delivery'
-            )
-            
-            # Переходим к шагу 4: Доставка
-            self._ask_delivery(message)
-            
-        except ValueError:
-            self.bot.send_message(
-                message.chat.id,
-                "❌ Неверный формат даты. Используйте ДД.ММ.ГГГГ (например: 25.12.2024)"
-            )
 
     def _ask_time(self, message: Message):
-        """Запрос времени приготовления"""
+        """Шаг 4: Запрос времени готовности"""
         keyboard = types.InlineKeyboardMarkup(row_width=3)
         
         # Предлагаем стандартные временные интервалы
-        times = ["09:00", "12:00", "15:00", "18:00", "21:00"]
-        for time in times:
-            keyboard.add(types.InlineKeyboardButton(
-                time,
-                callback_data=f"order_time_{time}"
-            ))
+        times = ["09:00", "10:00", "11:00", "12:00", "13:00", "14:00", 
+                "15:00", "16:00", "17:00", "18:00", "19:00", "20:00"]
+        
+        # Создаем кнопки по 3 в ряд
+        for i in range(0, len(times), 3):
+            row_times = times[i:i + 3]
+            row_buttons = []
+            for time in row_times:
+                row_buttons.append(types.InlineKeyboardButton(
+                    time,
+                    callback_data=f"order_time_{time}"
+                ))
+            keyboard.add(*row_buttons)
         
         keyboard.add(types.InlineKeyboardButton(
             "⏰ Другое время",
             callback_data="order_custom_time"
         ))
         
-        self.bot.send_message(
-            message.chat.id,
-            "⏰ <b>Выберите время готовности:</b>",
-            parse_mode='HTML',
-            reply_markup=keyboard
-        )
-
-    def _ask_delivery(self, message: Message):
-        """Шаг 4: Информация о доставке"""
-        keyboard = types.InlineKeyboardMarkup()
         keyboard.add(types.InlineKeyboardButton(
-            "✅ Понятно, продолжаем",
-            callback_data="order_delivery_continue"
+            "🔙 Назад к дате",
+            callback_data="order_back_date"
         ))
         
         self.bot.send_message(
             message.chat.id,
-            "🚚 <b>Информация о доставке</b>\n\n"
-            "🍪 <b>Внимание: пока доступен только самовывоз</b>\n\n"
-            "Мы пока не осуществляем доставку, но ваш заказ будет ожидать в нашем пункте выдачи\n\n"
-            "с радостью подготовим всё с учётом ваших пожеланий!\n\n"
-            "✨ Детали заказа можно указать в примечаниях к товару. Мы всё учтём!\n\n",
+            "⏰ <b>Выберите время готовности:</b>\n\n"
+            "Время указывается в формате ЧЧ:MM",
             parse_mode='HTML',
             reply_markup=keyboard
         )
+
+    def handle_time_selection(self, callback: CallbackQuery):
+        """Обработка выбора времени из предложенных"""
+        if callback.from_user.is_bot:
+            logger.warning(f"⚠️ Пропускаем callback от бота: {callback.from_user.id}")
+            return
+        
+        try:
+            time_str = callback.data.replace('order_time_', '')
+            
+            # Валидация формата времени
+            from datetime import datetime
+            try:
+                datetime.strptime(time_str, '%H:%M')
+            except ValueError:
+                self.bot.answer_callback_query(callback.id, "❌ Неверный формат времени")
+                return
+            
+            # Сохраняем время
+            self.order_states.update_order_data(
+                callback.from_user.id,
+                ready_time=time_str,
+                state='order_delivery'
+            )
+            
+            # Переходим к шагу 5: Доставка
+            self._ask_delivery(callback.message)
+            
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при выборе времени: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка при выборе времени")
+
+    def handle_custom_time(self, callback: CallbackQuery):
+        """Обработка запроса ручного ввода времени"""
+        if callback.from_user.is_bot:
+            logger.warning(f"⚠️ Пропускаем callback от бота: {callback.from_user.id}")
+            return
+        
+        self.order_states.set_order_step(callback.from_user.id, 'order_time_custom')
+        
+        keyboard = types.InlineKeyboardMarkup()
+        keyboard.add(types.InlineKeyboardButton(
+            "🔙 Назад к выбору времени",
+            callback_data="order_back_time"
+        ))
+        
+        self.bot.send_message(
+            callback.message.chat.id,
+            "⏰ <b>Введите время готовности в формате ЧЧ:MM</b>\n\n"
+            "Например:\n"
+            "• 14:30 - половина третьего\n"
+            "• 09:00 - девять утра\n"
+            "• 18:45 - без пятнадцати семь вечера\n\n"
+            "Рабочее время: с 09:00 до 21:00",
+            parse_mode='HTML',
+            reply_markup=keyboard
+        )
+        
+        self.bot.answer_callback_query(callback.id)
+
+    def process_custom_time_input(self, message: Message, order_data: dict):
+        """Обработка ручного ввода времени"""
+        try:
+            time_str = message.text.strip()
+            
+            # Валидация формата времени
+            from datetime import datetime
+            try:
+                datetime.strptime(time_str, '%H:%M')
+            except ValueError:
+                self.bot.send_message(
+                    message.chat.id,
+                    "❌ Неверный формат времени. Используйте ЧЧ:MM (например: 14:30)"
+                )
+                return
+            
+            # Проверяем рабочее время (9:00 - 21:00)
+            hour = int(time_str.split(':')[0])
+            if hour < 9 or hour > 21:
+                self.bot.send_message(
+                    message.chat.id,
+                    "❌ Время должно быть в рабочем интервале с 09:00 до 21:00"
+                )
+                return
+            
+            # Сохраняем время
+            self.order_states.update_order_data(
+                message.from_user.id,
+                ready_time=time_str,
+                state='order_delivery'
+            )
+            
+            # Переходим к шагу 5: Доставка
+            self._ask_delivery(message)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обработке времени: {e}")
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Ошибка при обработке времени. Попробуйте еще раз."
+            )
 
     def process_delivery_continue(self, callback: CallbackQuery):
         """Продолжение после информации о доставке"""
@@ -476,9 +575,16 @@ class OrderProcessor:
         summary += f"📦 <b>Количество:</b> {quantity_display}\n"
         summary += f"💰 <b>Стоимость:</b> {approximate_cost:.2f} руб.{cost_note}\n"
         
+        # Добавляем дату и время готовности
         if 'ready_date' in order_data:
             ready_date = datetime.fromisoformat(order_data['ready_date'])
-            summary += f"📅 <b>Дата готовности:</b> {ready_date.strftime('%d.%m.%Y')}\n"
+            date_str = ready_date.strftime('%d.%m.%Y')
+            
+            if 'ready_time' in order_data:
+                time_str = order_data['ready_time']
+                summary += f"📅 <b>Дата и время готовности:</b> {date_str} в {time_str}\n"
+            else:
+                summary += f"📅 <b>Дата готовности:</b> {date_str}\n"
         
         summary += f"🚚 <b>Доставка:</b> {order_data.get('delivery_type', 'самовывоз')}\n"
         summary += f"💳 <b>Вид расчета:</b> {prepayment_conditions or 'не указан'}\n"
@@ -569,6 +675,19 @@ class OrderProcessor:
                 total_cost = float(product['price']) * quantity
                 weight_grams = None
             
+            # Формируем дату и время готовности
+            ready_at = None
+            if 'ready_date' in order_data:
+                ready_date = datetime.fromisoformat(order_data['ready_date'])
+                
+                if 'ready_time' in order_data:
+                    # Объединяем дату и время
+                    time_str = order_data['ready_time']
+                    hour, minute = map(int, time_str.split(':'))
+                    ready_at = ready_date.replace(hour=hour, minute=minute)
+                else:
+                    ready_at = ready_date
+
             # Определяем статус оплаты
             prepayment_conditions = product.get('prepayment_conditions', '')
             if "предоплата" in prepayment_conditions:
@@ -586,7 +705,7 @@ class OrderProcessor:
                 'payment_type': prepayment_conditions,
                 'payment_status': payment_status,
                 'admin_notes': '',
-                'ready_at': order_data.get('ready_date')
+                'ready_at': ready_at.isoformat() if ready_at else None
             }
             
             # Создаем заказ

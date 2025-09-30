@@ -40,39 +40,6 @@ class OrderHandler(BaseUserHandler):
             logger.info(f"🔍 Обработка сообщения в процессе заказа: '{message.text}'")
             self._handle_order_message(message)
 
-
-        # @self.bot.message_handler(
-        #     func=lambda message: message.from_user.id != self.bot.get_me().id  # Исключаем бота
-        # )
-        # @self.bot.message_handler(func=lambda message: True) # ВРЕМЕННО ВСЕ СООБЩЕНИЯ
-        # def debug_all_messages(message: Message):
-        #     logger.info(f"🔍 DEBUG: Получено сообщение от {message.from_user.id}: '{message.text}'")
-            
-        #     # Проверяем состояние пользователя
-        #     user_id = message.from_user.id
-        #     order_data = self.order_states.get_order_data(user_id)
-        #     if order_data:
-        #         logger.info(f"🔍 DEBUG: Состояние заказа: {order_data.get('state')}")
-        #     else:
-        #         logger.info(f"🔍 DEBUG: Нет активного заказа")
-            
-
-        # @self.bot.message_handler(commands=['check_state'])
-        # def check_order_state(message: Message):
-        #     """Проверка текущего состояния заказа"""
-        #     user_id = message.from_user.id
-        #     order_data = self.order_states.get_order_data(user_id)
-            
-        #     response = f"""
-        # 🔍 CHECK STATE:
-        # User ID: {user_id}
-        # Order Data: {order_data}
-        # In Order Process: {self.order_states.is_in_order_process(user_id)}
-        # State Manager: {self.states_manager}
-        #     """
-            
-        #     self.bot.send_message(message.chat.id, f"<code>{response}</code>", parse_mode='HTML')
-        #     logger.info(f"🔍 CHECK STATE RESPONSE: {response}")                                                                     
     
     def register_handlers(self):
         """Регистрация обработчиков заказов"""
@@ -96,6 +63,22 @@ class OrderHandler(BaseUserHandler):
         @self.bot.callback_query_handler(func=lambda call: call.data == 'order_custom_date')
         def handle_custom_date(callback: CallbackQuery):
             self.order_processor.handle_custom_date(callback)
+
+        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('order_time_'))
+        def handle_order_time(callback: CallbackQuery):
+            self.order_processor.handle_time_selection(callback)
+        
+        @self.bot.callback_query_handler(func=lambda call: call.data == 'order_custom_time')
+        def handle_custom_time(callback: CallbackQuery):
+            self.order_processor.handle_custom_time(callback)
+        
+        @self.bot.callback_query_handler(func=lambda call: call.data == 'order_back_time')
+        def handle_back_to_time(callback: CallbackQuery):
+            self._handle_back_to_time(callback)
+        
+        @self.bot.callback_query_handler(func=lambda call: call.data == 'order_back_date')
+        def handle_back_to_date(callback: CallbackQuery):
+            self._handle_back_to_date(callback)
         
         @self.bot.callback_query_handler(func=lambda call: call.data == 'order_delivery_continue')
         def handle_delivery_continue(callback: CallbackQuery):
@@ -232,6 +215,10 @@ class OrderHandler(BaseUserHandler):
         elif current_state == 'order_date_custom':
             logger.info("🔍 Обработка ручного ввода даты")
             self.order_processor.process_custom_date_input(message, order_data)
+
+        elif current_state == 'order_time_custom':  # НОВОЕ: обработка ручного ввода времени
+            logger.info("🔍 Обработка ручного ввода времени")
+            self.order_processor.process_custom_time_input(message, order_data)
 
         elif current_state == 'order_notes':
             logger.info("🔍 Обработка ввода примечаний")
@@ -749,6 +736,40 @@ class OrderHandler(BaseUserHandler):
     #         text="❌ <b>Заказ отменен</b>",
     #         parse_mode='HTML'
     #     )
+
+    def _handle_back_to_date(self, callback: CallbackQuery):
+        """Возврат к выбору даты"""
+        try:
+            user_id = callback.from_user.id
+            order_data = self.order_states.get_order_data(user_id)
+            
+            if order_data:
+                product_id = order_data['product_id']
+                self.order_states.set_order_step(user_id, 'order_date')
+                self.order_processor._ask_date(callback.message, product_id)
+            
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к дате: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
+    def _handle_back_to_time(self, callback: CallbackQuery):
+        """Возврат к выбору времени"""
+        try:
+            user_id = callback.from_user.id
+            order_data = self.order_states.get_order_data(user_id)
+            
+            if order_data:
+                self.order_states.set_order_step(user_id, 'order_time')
+                self.order_processor._ask_time(callback.message)
+            
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при возврате ко времени: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
 
     def _handle_back_to_categories(self, callback: CallbackQuery):
         """Обработка возврата к списку категорий"""
