@@ -19,8 +19,10 @@ class OrderConstants:
     
     # Состояния оформления заказа
     ORDER_STATES = {
+        'CHECKING_AVAILABILITY': 'order_check_availability',
         'SELECTING_QUANTITY': 'order_quantity',
-        'SELECTING_DATE': 'order_date', 
+        'SELECTING_DATE': 'order_date',
+        'SELECTING_DATE_CUSTOM': 'order_date_custom',
         'SELECTING_DELIVERY': 'order_delivery',
         'SELECTING_PAYMENT': 'order_payment',
         'ADDING_NOTES': 'order_notes',

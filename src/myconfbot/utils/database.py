@@ -15,7 +15,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # Импортируем модели для создания таблиц
-from .models import Base, Order, Product, Category, OrderStatus, User, ProductPhoto, OrderStatusEnum
+from .models import Base, Order, OrderNote, Product, Category, OrderStatus, User, ProductPhoto, OrderStatusEnum
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -357,6 +357,12 @@ class DatabaseManager:
         """Создание нового заказа"""
         try:
             with self.session_scope() as session:
+                # ✅ ПРОВЕРКА: Существует ли пользователь с таким telegram_id
+                user = session.query(User).filter_by(telegram_id=order_data['user_id']).first()
+                if not user:
+                    logger.error(f"❌ Пользователь с telegram_id {order_data['user_id']} не найден")
+                    return None
+            
                 order = Order(
                     user_id=order_data['user_id'],
                     product_id=order_data['product_id'],
@@ -371,17 +377,35 @@ class DatabaseManager:
                     admin_notes=order_data.get('admin_notes')
                 )
                 session.add(order)
+        #         session.commit()
+        #         session.refresh(order)  # Важно: обновляем объект после коммита
+        #         return order
+        # except Exception as e:
+        #     self.session.rollback()
+        #     logger.error(f"Ошибка при создании заказа: {e}")
+            # return None
+
+        #         ## staroe
                 session.flush()  # Получаем ID заказа
+
+                order_id = order.id
                 
                 # Создаем начальный статус заказа
                 initial_status = OrderStatus(
-                    order_id=order.id,
+                    order_id=order_id,
                     status=OrderStatusEnum.CREATED.value,
                     created_at=datetime.utcnow()
                 )
                 session.add(initial_status)
+
+                session.commit() # Теперь коммитим оба объекта
+
+                logger.info(f"✅ Заказ создан: ID={order.id}, user_id(telegram_id)={order.user_id}")
                 
-                return order
+                # Возвращаем новый объект Order с правильной сессией
+                # return session.query(Order).filter_by(id=order_id).first()
+                return order_id
+            
         except Exception as e:
             logger.error(f"Ошибка при создании заказа: {e}")
             return None
@@ -407,6 +431,49 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка при получении заказов пользователя: {e}")
             return []
+    
+    def create_order_and_get_id(self, order_data: dict) -> Optional[int]:
+        """Создание заказа и возврат только ID"""
+        try:
+            with self.session_scope() as session:
+                user = session.query(User).filter_by(telegram_id=order_data['user_id']).first()
+                if not user:
+                    logger.error(f"❌ Пользователь с telegram_id {order_data['user_id']} не найден")
+                    return None
+                
+                order = Order(
+                    user_id=order_data['user_id'],
+                    product_id=order_data['product_id'],
+                    quantity=order_data.get('quantity', 1),
+                    weight_grams=order_data.get('weight_grams'),
+                    delivery_type=order_data.get('delivery_type'),
+                    delivery_address=order_data.get('delivery_address'),
+                    ready_at=order_data.get('ready_at'),
+                    total_cost=order_data.get('total_cost'),
+                    payment_type=order_data.get('payment_type'),
+                    payment_status=order_data.get('payment_status', 'Не оплачен'),
+                    admin_notes=order_data.get('admin_notes')
+                )
+                session.add(order)
+                session.flush()
+                order_id = order.id
+                
+                # Создаем начальный статус заказа
+                initial_status = OrderStatus(
+                    order_id=order_id,
+                    status='Создан / Новый',
+                    created_at=datetime.utcnow()
+                )
+                session.add(initial_status)
+                
+                session.commit()
+                
+                logger.info(f"✅ Заказ создан: ID={order_id}, user_id(telegram_id)={order.user_id}")
+                return order_id
+                
+        except Exception as e:
+            logger.error(f"Ошибка при создании заказа: {e}")
+            return None
 
     def get_current_order_status(self, order_id: int) -> str:
         """Получить текущий статус заказа"""
@@ -593,6 +660,12 @@ class DatabaseManager:
         """Добавить примечание к заказу"""
         try:
             with self.session_scope() as session:
+                # ✅ ПРОВЕРКА: Существует ли пользователь
+                user = session.query(User).filter_by(telegram_id=user_id).first()
+                if not user:
+                    logger.error(f"❌ Пользователь с telegram_id {user_id} не найден")
+                    return False
+                
                 note = OrderNote(
                     order_id=order_id,
                     user_id=user_id,
