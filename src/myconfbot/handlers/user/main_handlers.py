@@ -1,6 +1,7 @@
 # src\myconfbot\handlers\user\main_handlers.py
 
 import logging
+logger = logging.getLogger(__name__)
 import os
 from typing import Optional
 
@@ -16,7 +17,6 @@ class MainHandler(BaseUserHandler):
     def __init__(self, bot, config, db_manager):
         super().__init__(bot, config, db_manager)
         self.content_manager = ContentManager()
-        self.logger = logging.getLogger(__name__)
     
     def register_handlers(self):
         """Регистрация всех обработчиков"""
@@ -70,8 +70,17 @@ class MainHandler(BaseUserHandler):
 
     def _show_my_orders(self, message: Message):
         """Показать мои заказы"""
-        # TODO: Реализовать позже
-        self.bot.send_message(message.chat.id, "📋 Функция 'Мои заказы' в разработке")
+        try:
+            # Импортируем здесь чтобы избежать циклических импортов
+            from .my_order_handler import MyOrderHandler
+            my_order_handler = MyOrderHandler(self.bot, self.config, self.db_manager)
+            my_order_handler.show_user_orders(message)
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при показе заказов: {e}")
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Произошла ошибка при загрузке заказов. Попробуйте позже."
+            )
 
     def _show_favorites(self, message: Message):
         """Показать избранное"""
@@ -154,7 +163,7 @@ class MainHandler(BaseUserHandler):
             self.send_formatted_message(chat_id, welcome_text)
             
         except Exception as e:
-            self.logger.error(f"Ошибка при обработке /start: {e}", exc_info=True)
+            logger.error(f"⛔️ Ошибка при обработке /start: {e}", exc_info=True)
             self.bot.send_message(chat_id, "Произошла ошибка. Попробуйте позже.")
     
     def _show_menu_command(self, message: Message):
@@ -323,7 +332,7 @@ class MainHandler(BaseUserHandler):
                 self.bot.send_message(chat_id, "Произошла ошибка при сохранении данных. Попробуйте еще раз.")
             
         except Exception as e:
-            self.logger.error(f"Ошибка при сохранении адреса: {e}", exc_info=True)
+            logger.error(f"⛔️ Ошибка при сохранении адреса: {e}", exc_info=True)
             self.bot.send_message(chat_id, "Произошла ошибка при сохранении. Попробуйте еще раз.")
     
     def _show_my_profile(self, message: Message):

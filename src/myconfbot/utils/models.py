@@ -85,8 +85,8 @@ class Order(Base):
     __tablename__ = "orders"
     
     id = sa.Column(sa.Integer, primary_key=True)
-    #user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
-    user_id = sa.Column(sa.BigInteger, sa.ForeignKey("users.telegram_id"), nullable=False)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
+    #user_id = sa.Column(sa.BigInteger, sa.ForeignKey("users.telegram_id"), nullable=False)
     delivery_address = sa.Column(sa.Text)
     product_id = sa.Column(sa.Integer, sa.ForeignKey("products.id"), nullable=False)
     weight_grams = sa.Column(sa.Integer)
@@ -113,8 +113,8 @@ class OrderNote(Base):
     id = sa.Column(sa.Integer, primary_key=True)
     order_id = sa.Column(sa.Integer, sa.ForeignKey("orders.id"), nullable=False)
     created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
-    #user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
-    user_id = sa.Column(sa.BigInteger, sa.ForeignKey("users.telegram_id"), nullable=False)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
+    #user_id = sa.Column(sa.BigInteger, sa.ForeignKey("users.telegram_id"), nullable=False)
     note_text = sa.Column(sa.Text, nullable=False)
     
     order = relationship("Order", back_populates="notes")

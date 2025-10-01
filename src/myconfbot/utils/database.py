@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 import os
 import sqlite3
 import logging
+import sqlalchemy as sa
 from typing import Optional, Dict, List
 from src.myconfbot.config import Config
 from sqlalchemy import create_engine, text, func
@@ -15,7 +16,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # Импортируем модели для создания таблиц
-from .models import Base, Order, OrderNote, Product, Category, OrderStatus, User, ProductPhoto, OrderStatusEnum
+from .models import Base, Order, Product, Category, OrderStatus, User, ProductPhoto, OrderStatusEnum, OrderNote
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -357,12 +358,6 @@ class DatabaseManager:
         """Создание нового заказа"""
         try:
             with self.session_scope() as session:
-                # ✅ ПРОВЕРКА: Существует ли пользователь с таким telegram_id
-                user = session.query(User).filter_by(telegram_id=order_data['user_id']).first()
-                if not user:
-                    logger.error(f"❌ Пользователь с telegram_id {order_data['user_id']} не найден")
-                    return None
-            
                 order = Order(
                     user_id=order_data['user_id'],
                     product_id=order_data['product_id'],
@@ -377,74 +372,36 @@ class DatabaseManager:
                     admin_notes=order_data.get('admin_notes')
                 )
                 session.add(order)
-        #         session.commit()
-        #         session.refresh(order)  # Важно: обновляем объект после коммита
-        #         return order
-        # except Exception as e:
-        #     self.session.rollback()
-        #     logger.error(f"Ошибка при создании заказа: {e}")
-            # return None
-
-        #         ## staroe
                 session.flush()  # Получаем ID заказа
-
-                order_id = order.id
                 
                 # Создаем начальный статус заказа
                 initial_status = OrderStatus(
-                    order_id=order_id,
+                    order_id=order.id,
                     status=OrderStatusEnum.CREATED.value,
                     created_at=datetime.utcnow()
                 )
                 session.add(initial_status)
-
-                session.commit() # Теперь коммитим оба объекта
-
-                logger.info(f"✅ Заказ создан: ID={order.id}, user_id(telegram_id)={order.user_id}")
                 
-                # Возвращаем новый объект Order с правильной сессией
-                # return session.query(Order).filter_by(id=order_id).first()
-                return order_id
-            
+                return order
         except Exception as e:
             logger.error(f"Ошибка при создании заказа: {e}")
             return None
-
-    def get_orders_by_user(self, user_id: int) -> List[dict]:
-        """Получить заказы пользователя"""
-        try:
-            with self.session_scope() as session:
-                orders = session.query(Order).filter_by(user_id=user_id).order_by(Order.created_at.desc()).all()
-                return [
-                    {
-                        'id': order.id,
-                        'product_name': order.product.name,
-                        'quantity': order.quantity,
-                        'total_cost': float(order.total_cost) if order.total_cost else 0,
-                        'created_at': order.created_at,
-                        'delivery_type': order.delivery_type,
-                        'payment_status': order.payment_status,
-                        'current_status': self.get_current_order_status(order.id)
-                    }
-                    for order in orders
-                ]
-        except Exception as e:
-            logger.error(f"Ошибка при получении заказов пользователя: {e}")
-            return []
-    
+        
     def create_order_and_get_id(self, order_data: dict) -> Optional[int]:
-        """Создание заказа и возврат только ID"""
+        """Создание заказа и возврат его ID"""
         try:
             with self.session_scope() as session:
+                # Получаем пользователя по telegram_id
                 user = session.query(User).filter_by(telegram_id=order_data['user_id']).first()
                 if not user:
-                    logger.error(f"❌ Пользователь с telegram_id {order_data['user_id']} не найден")
+                    logger.error(f"Пользователь с telegram_id {order_data['user_id']} не найден")
                     return None
                 
+                # Создаем заказ с user_id (id пользователя)
                 order = Order(
-                    user_id=order_data['user_id'],
+                    user_id=user.id,  # Используем id, а не telegram_id
                     product_id=order_data['product_id'],
-                    quantity=order_data.get('quantity', 1),
+                    quantity=order_data.get('quantity'),
                     weight_grams=order_data.get('weight_grams'),
                     delivery_type=order_data.get('delivery_type'),
                     delivery_address=order_data.get('delivery_address'),
@@ -455,38 +412,127 @@ class DatabaseManager:
                     admin_notes=order_data.get('admin_notes')
                 )
                 session.add(order)
-                session.flush()
-                order_id = order.id
+                session.flush()  # Получаем ID заказа
                 
                 # Создаем начальный статус заказа
                 initial_status = OrderStatus(
-                    order_id=order_id,
-                    status='Создан / Новый',
+                    order_id=order.id,
+                    status=OrderStatusEnum.CREATED.value,
                     created_at=datetime.utcnow()
                 )
                 session.add(initial_status)
                 
-                session.commit()
-                
-                logger.info(f"✅ Заказ создан: ID={order_id}, user_id(telegram_id)={order.user_id}")
-                return order_id
-                
+                return order.id
         except Exception as e:
             logger.error(f"Ошибка при создании заказа: {e}")
-            return None
+            return None  
 
-    def get_current_order_status(self, order_id: int) -> str:
-        """Получить текущий статус заказа"""
+    def get_orders_by_user(self, telegram_id: int) -> List[dict]:
+        """Получить заказы пользователя по telegram_id"""
         try:
             with self.session_scope() as session:
-                last_status = session.query(OrderStatus).filter_by(
-                    order_id=order_id
-                ).order_by(OrderStatus.created_at.desc()).first()
+                # Находим пользователя по telegram_id
+                user = session.query(User).filter_by(telegram_id=telegram_id).first()
+                if not user:
+                    logger.warning(f"Пользователь с telegram_id {telegram_id} не найден")
+                    return []
                 
-                return last_status.status if last_status else OrderStatusEnum.CREATED.value
+                # Получаем заказы по user_id (id пользователя) с жадной загрузкой связанных данных
+                orders = session.query(Order)\
+                    .options(sa.orm.joinedload(Order.product))\
+                    .filter_by(user_id=user.id)\
+                    .order_by(Order.created_at.desc())\
+                    .all()
+                
+                result = []
+                for order in orders:
+                    result.append({
+                        'id': order.id,
+                        'product_name': order.product.name if order.product else 'Неизвестно',
+                        'quantity': order.quantity,
+                        'weight_grams': order.weight_grams,
+                        'total_cost': float(order.total_cost) if order.total_cost else 0,
+                        'created_at': order.created_at,
+                        'delivery_type': order.delivery_type,
+                        'payment_status': order.payment_status,
+                        #'current_status': self.get_current_order_status(order.id)
+                        'current_status': self.get_current_order_status(order.id, session)
+                    })
+                
+                return result
+                
+        except Exception as e:
+            logger.error(f"Ошибка при получении заказов пользователя: {e}")
+            return []  
+        
+    # def get_orders_by_user(self, telegram_id: int) -> List[dict]:
+    #     """Получить заказы пользователя по telegram_id"""
+    #     try:
+    #         with self.session_scope() as session:
+    #             # Находим пользователя по telegram_id
+    #             user = session.query(User).filter_by(telegram_id=telegram_id).first()
+    #             if not user:
+    #                 logger.warning(f"Пользователь с telegram_id {telegram_id} не найден")
+    #                 return []
+                
+    #             # Получаем заказы по user_id (id пользователя)
+    #             orders = session.query(Order).filter_by(user_id=user.id).order_by(Order.created_at.desc()).all()
+                
+    #             result = []
+    #             for order in orders:
+    #                 result.append({
+    #                     'id': order.id,
+    #                     'product_name': order.product.name if order.product else 'Неизвестно',
+    #                     'quantity': order.quantity,
+    #                     'weight_grams': order.weight_grams,
+    #                     'total_cost': float(order.total_cost) if order.total_cost else 0,
+    #                     'created_at': order.created_at,
+    #                     'delivery_type': order.delivery_type,
+    #                     'payment_status': order.payment_status,
+    #                     'current_status': self.get_current_order_status(order.id)
+    #                 })
+                
+    #             return result
+                
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении заказов пользователя: {e}")
+    #         return []
+
+    def get_current_order_status(self, order_id: int, session=None) -> str:
+        """Получить текущий статус заказа"""
+        try:
+            if session is None:
+                # Если сессия не передана, создаем новую
+                with self.session_scope() as new_session:
+                    return self._get_current_order_status_with_session(order_id, new_session)
+            else:
+                # Используем переданную сессию
+                return self._get_current_order_status_with_session(order_id, session)
         except Exception as e:
             logger.error(f"Ошибка при получении статуса заказа: {e}")
             return OrderStatusEnum.CREATED.value
+
+    def _get_current_order_status_with_session(self, order_id: int, session) -> str:
+        """Вспомогательный метод для получения статуса с сессией"""
+        last_status = session.query(OrderStatus).filter_by(
+            order_id=order_id
+        ).order_by(OrderStatus.created_at.desc()).first()
+        
+        return last_status.status if last_status else OrderStatusEnum.CREATED.value
+
+    
+    # def get_current_order_status(self, order_id: int) -> str:
+    #     """Получить текущий статус заказа"""
+    #     try:
+    #         with self.session_scope() as session:
+    #             last_status = session.query(OrderStatus).filter_by(
+    #                 order_id=order_id
+    #             ).order_by(OrderStatus.created_at.desc()).first()
+                
+    #             return last_status.status if last_status else OrderStatusEnum.CREATED.value
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении статуса заказа: {e}")
+    #         return OrderStatusEnum.CREATED.value
 
     def update_order_status(self, order_id: int, status: OrderStatusEnum, photo_path: str = None) -> bool:
         """Обновить статус заказа"""
@@ -656,19 +702,20 @@ class DatabaseManager:
         
     # --- Методы для работы с примечаниями к заказам ---
 
-    def add_order_note(self, order_id: int, user_id: int, note_text: str) -> bool:
+    def add_order_note(self, order_id: int, telegram_id: int, note_text: str) -> bool:
         """Добавить примечание к заказу"""
         try:
             with self.session_scope() as session:
-                # ✅ ПРОВЕРКА: Существует ли пользователь
-                user = session.query(User).filter_by(telegram_id=user_id).first()
+                from src.myconfbot.utils.models import OrderNote
+                # Получаем пользователя по telegram_id
+                user = session.query(User).filter_by(telegram_id=telegram_id).first()
                 if not user:
-                    logger.error(f"❌ Пользователь с telegram_id {user_id} не найден")
+                    logger.error(f"Пользователь с telegram_id {telegram_id} не найден")
                     return False
                 
                 note = OrderNote(
                     order_id=order_id,
-                    user_id=user_id,
+                    user_id=user.id,  # Используем id пользователя
                     note_text=note_text,
                     created_at=datetime.utcnow()
                 )
@@ -678,26 +725,66 @@ class DatabaseManager:
             logger.error(f"Ошибка при добавлении примечания к заказу: {e}")
             return False
 
+    # def add_order_note(self, order_id: int, user_id: int, note_text: str) -> bool:
+    #     """Добавить примечание к заказу"""
+    #     try:
+    #         with self.session_scope() as session:
+    #             note = OrderNote(
+    #                 order_id=order_id,
+    #                 user_id=user_id,
+    #                 note_text=note_text,
+    #                 created_at=datetime.utcnow()
+    #             )
+    #             session.add(note)
+    #             return True
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при добавлении примечания к заказу: {e}")
+    #         return False
+
     def get_order_notes(self, order_id: int) -> List[dict]:
         """Получить примечания к заказу"""
         try:
             with self.session_scope() as session:
+                from src.myconfbot.utils.models import OrderNote, User
                 notes = session.query(OrderNote).filter_by(
                     order_id=order_id
                 ).order_by(OrderNote.created_at).all()
                 
-                return [
-                    {
+                result = []
+                for note in notes:
+                    # Получаем пользователя по user_id
+                    user = session.query(User).filter_by(id=note.user_id).first()
+                    result.append({
                         'id': note.id,
-                        'user_name': note.user.full_name,
+                        'user_name': user.full_name if user else 'Неизвестно',
                         'note_text': note.note_text,
                         'created_at': note.created_at
-                    }
-                    for note in notes
-                ]
+                    })
+                return result
         except Exception as e:
             logger.error(f"Ошибка при получении примечаний к заказу: {e}")
             return []
+
+    # def get_order_notes(self, order_id: int) -> List[dict]:
+    #     """Получить примечания к заказу"""
+    #     try:
+    #         with self.session_scope() as session:
+    #             notes = session.query(OrderNote).filter_by(
+    #                 order_id=order_id
+    #             ).order_by(OrderNote.created_at).all()
+                
+    #             return [
+    #                 {
+    #                     'id': note.id,
+    #                     'user_name': note.user.full_name,
+    #                     'note_text': note.note_text,
+    #                     'created_at': note.created_at
+    #                 }
+    #                 for note in notes
+    #             ]
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении примечаний к заказу: {e}")
+    #         return []
     
     # --- Методы для работы с продукцийе и категориями ---
 

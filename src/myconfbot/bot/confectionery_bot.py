@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 from src.myconfbot.utils.database import db_manager
 from src.myconfbot.handlers import HandlerFactory
 from src.myconfbot.handlers.user.order_handler import OrderHandler
+from src.myconfbot.handlers.user.my_order_handler import MyOrderHandler
 
 
 # Загрузка переменных окружения
@@ -31,6 +32,9 @@ class ConfectioneryBot:
         self.setup_handlers()
         order_handler = OrderHandler(self.bot, self.config, db_manager)
         order_handler.register_handlers()
+        my_order_handler = MyOrderHandler(self.bot, config, db_manager)
+        my_order_handler.register_handlers()
+        
         logger.info("Бот инициализирован")
 
     def setup_handlers(self):

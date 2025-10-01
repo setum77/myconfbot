@@ -672,7 +672,7 @@ class OrderProcessor:
         except Exception as e:
             logger.error(f"Ошибка при подтверждении заказа: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при создании заказа")
-
+            
     def _create_order_in_db(self, user_id: int, order_data: dict) -> bool:
         """Создание заказа в базе данных с учетом новых полей"""
         try:
@@ -700,7 +700,6 @@ class OrderProcessor:
                 ready_date = datetime.fromisoformat(order_data['ready_date'])
                 
                 if 'ready_time' in order_data:
-                    # Объединяем дату и время
                     time_str = order_data['ready_time']
                     hour, minute = map(int, time_str.split(':'))
                     ready_at = ready_date.replace(hour=hour, minute=minute)
@@ -715,7 +714,7 @@ class OrderProcessor:
                 payment_status = "Не оплачен"
             
             order_db_data = {
-                'user_id': user_id,
+                'user_id': user_id,  # telegram_id пользователя
                 'product_id': order_data['product_id'],
                 'quantity': quantity,
                 'weight_grams': weight_grams,
@@ -727,7 +726,7 @@ class OrderProcessor:
                 'ready_at': ready_at.isoformat() if ready_at else None
             }
             
-            # Создаем заказ
+            # Создаем заказ через новый метод
             order_id = self.db_manager.create_order_and_get_id(order_db_data)
             
             if order_id:
@@ -738,7 +737,7 @@ class OrderProcessor:
                         for note in user_notes:
                             self.db_manager.add_order_note(
                                 order_id,
-                                user_id,
+                                user_id,  # telegram_id пользователя
                                 note['text']
                             )
                 
@@ -748,6 +747,82 @@ class OrderProcessor:
         except Exception as e:
             logger.error(f"Ошибка при создании заказа в БД: {e}")
             return False
+
+    # def _create_order_in_db(self, user_id: int, order_data: dict) -> bool:
+    #     """Создание заказа в базе данных с учетом новых полей"""
+    #     try:
+    #         product = self.db_manager.get_product_by_id(order_data['product_id'])
+            
+    #         if not product:
+    #             return False
+            
+    #         # Вычисляем стоимость
+    #         measurement_unit = product['measurement_unit'] or 'шт'
+    #         is_weight_based = 'грамм' in measurement_unit.lower()
+            
+    #         if is_weight_based:
+    #             weight_grams = order_data.get('weight_grams', 0)
+    #             total_cost = float(product['price']) * weight_grams / float(product['quantity'])
+    #             quantity = None
+    #         else:
+    #             quantity = order_data.get('quantity', 0)
+    #             total_cost = float(product['price']) * quantity
+    #             weight_grams = None
+            
+    #         # Формируем дату и время готовности
+    #         ready_at = None
+    #         if 'ready_date' in order_data:
+    #             ready_date = datetime.fromisoformat(order_data['ready_date'])
+                
+    #             if 'ready_time' in order_data:
+    #                 # Объединяем дату и время
+    #                 time_str = order_data['ready_time']
+    #                 hour, minute = map(int, time_str.split(':'))
+    #                 ready_at = ready_date.replace(hour=hour, minute=minute)
+    #             else:
+    #                 ready_at = ready_date
+
+    #         # Определяем статус оплаты
+    #         prepayment_conditions = product.get('prepayment_conditions', '')
+    #         if "предоплата" in prepayment_conditions:
+    #             payment_status = "Ожидает предоплату"
+    #         else:
+    #             payment_status = "Не оплачен"
+            
+    #         order_db_data = {
+    #             'user_id': user_id,
+    #             'product_id': order_data['product_id'],
+    #             'quantity': quantity,
+    #             'weight_grams': weight_grams,
+    #             'total_cost': total_cost,
+    #             'delivery_type': order_data.get('delivery_type', 'самовывоз'),
+    #             'payment_type': prepayment_conditions,
+    #             'payment_status': payment_status,
+    #             'admin_notes': '',
+    #             'ready_at': ready_at.isoformat() if ready_at else None
+    #         }
+            
+    #         # Создаем заказ
+    #         order_id = self.db_manager.create_order_and_get_id(order_db_data)
+            
+    #         if order_id:
+    #             # Сохраняем примечания пользователя
+    #             if 'notes' in order_data:
+    #                 user_notes = [note for note in order_data['notes'] if not note.get('is_admin', False)]
+    #                 if user_notes:
+    #                     for note in user_notes:
+    #                         self.db_manager.add_order_note(
+    #                             order_id,
+    #                             user_id,
+    #                             note['text']
+    #                         )
+                
+    #             return True
+    #         return False
+            
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при создании заказа в БД: {e}")
+    #         return False
 
     def cancel_order(self, callback: CallbackQuery):
         """Отмена заказа"""
