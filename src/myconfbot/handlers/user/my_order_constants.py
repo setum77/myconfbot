@@ -42,10 +42,10 @@ class MyOrderConstants:
             )
         
         # Кнопка назад в главное меню
-        keyboard.add(types.InlineKeyboardButton(
-            "🔙 Главное меню",
-            callback_data="main_menu"
-        ))
+        # keyboard.add(types.InlineKeyboardButton(
+        #     "🔙 Главное меню",
+        #     callback_data="main_menu"
+        # ))
         
         return keyboard
         
@@ -87,5 +87,23 @@ class MyOrderConstants:
             "🔙 Назад к заказам",
             callback_data="my_order_back_to_list"
         ))
+        
+        return keyboard
+    
+    @staticmethod
+    def create_order_notes_keyboard(order_id):
+        """Клавиатура для примечаний к заказу с кнопкой добавления сообщения"""
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
+        
+        keyboard.add(
+            types.InlineKeyboardButton(
+                "➕ Добавить сообщение",
+                callback_data=f"my_order_add_note_{order_id}"
+            ),
+            types.InlineKeyboardButton(
+                "🔙 Назад к заказам",
+                callback_data="my_order_back_to_list"
+            )
+        )
         
         return keyboard

@@ -2,7 +2,8 @@
 
 import logging
 from datetime import datetime
-from telebot.types import Message, CallbackQuery
+from telebot import types
+from telebot.types import Message, CallbackQuery, ReplyKeyboardRemove
 
 from src.myconfbot.handlers.user.base_user_handler import BaseUserHandler
 from src.myconfbot.handlers.user.my_order_constants import MyOrderConstants
@@ -43,6 +44,11 @@ class MyOrderHandler(BaseUserHandler):
         def handle_order_notes(callback: CallbackQuery):
             """Обработка просмотра примечаний заказа"""
             self._show_order_notes(callback)
+
+        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('my_order_add_note_'))
+        def handle_add_note(callback: CallbackQuery):
+            """Обработка добавления сообщения к заказу"""
+            self._handle_add_note(callback)
         
         @self.bot.callback_query_handler(func=lambda call: call.data == 'my_order_back_to_list')
         def handle_back_to_list(callback: CallbackQuery):
@@ -151,8 +157,8 @@ class MyOrderHandler(BaseUserHandler):
             else:
                 message_text = self._format_order_notes(order_notes)
             
-            keyboard = MyOrderConstants.create_back_to_orders_keyboard()
-            
+            keyboard = MyOrderConstants.create_order_notes_keyboard(order_id)
+
             self.bot.edit_message_text(
                 chat_id=callback.message.chat.id,
                 message_id=callback.message.message_id,
@@ -451,9 +457,80 @@ class MyOrderHandler(BaseUserHandler):
         text = "💬 <b>Примечания к заказу</b>\n\n"
         
         for note in order_notes:
-            text += f"📅 <b>{note['created_at'].strftime('%d.%m.%Y %H:%M')}</b>\n"
-            text += f"👤 <b>{note['user_name']}</b>\n"
+            text += f"👤 <b>{note['user_name']}</b> | {note['created_at'].strftime('%d.%m.%Y %H:%M')}\n"
+            text += "----\n"
             text += f"💬 {note['note_text']}\n"
-            text += "━━━━━━━━━━━━━━━━━━━━\n\n"
+            text += "━━━━━━━━━━━━━━━━━━\n\n"
         
         return text
+    
+    def _handle_add_note(self, callback: CallbackQuery):
+        """Обработка добавления сообщения к заказу"""
+        try:
+            order_id = int(callback.data.replace('my_order_add_note_', ''))
+            
+            # Сохраняем order_id в данных пользователя для следующего сообщения
+            self.bot.answer_callback_query(
+                callback.id, 
+                "✍️ Введите ваше сообщение для заказа"
+            )
+            
+            # Устанавливаем состояние ожидания сообщения
+            self.bot.register_next_step_handler(
+                callback.message, 
+                lambda message: self._process_user_note(message, order_id)
+            )
+            
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении сообщения: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка при добавлении сообщения")
+
+    def _process_user_note(self, message: Message, order_id: int):
+        """Обработка введенного пользователем сообщения"""
+        try:
+            user_id = message.from_user.id
+            note_text = message.text
+            
+            # Сохраняем примечание в базу данных
+            success = self.db_manager.add_order_note(
+                order_id=order_id,
+                telegram_id=user_id,
+                note_text=note_text
+            )
+            
+            if success:
+                # Получаем обновленные примечания
+                order_notes = self.db_manager.get_order_notes(order_id)
+                
+                if not order_notes:
+                    message_text = (
+                        "💬 <b>Примечания к заказу</b>\n\n"
+                        "📭 Пока нет примечаний.\n\n"
+                        "Здесь будет отображаться переписка по заказу."
+                    )
+                else:
+                    message_text = self._format_order_notes(order_notes)
+                
+                # Используем новую клавиатуру с кнопкой добавления сообщения
+                keyboard = MyOrderConstants.create_order_notes_keyboard(order_id)
+                
+                # Отправляем НОВОЕ сообщение вместо редактирования старого
+                self.bot.send_message(
+                    message.chat.id,
+                    "✅ Сообщение успешно добавлено!\n\n" + message_text,
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+                
+            else:
+                self.bot.send_message(
+                    message.chat.id,
+                    "❌ Ошибка при сохранении сообщения. Попробуйте позже."
+                )
+                
+        except Exception as e:
+            logger.error(f"Ошибка при обработке сообщения пользователя: {e}")
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Произошла ошибка. Попробуйте позже."
+            )
