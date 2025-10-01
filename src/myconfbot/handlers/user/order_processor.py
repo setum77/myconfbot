@@ -93,7 +93,8 @@ class OrderProcessor:
         measurement_unit = product['measurement_unit'] or 'шт'
         is_weight_based = 'грамм' in measurement_unit.lower()
         
-        question = f"🎂 <b>{product['name']}</b>\n\n"
+        question = "<b>Начинаем оформлятть заказ!</b>\n\n"
+        question += f"🎂 <b>{product['name']}</b>\n\n"
         
         if is_weight_based:
             question += f"⚖️ <b>Товар измеряется по весу</b>\n"
@@ -672,7 +673,7 @@ class OrderProcessor:
         except Exception as e:
             logger.error(f"Ошибка при подтверждении заказа: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при создании заказа")
-            
+
     def _create_order_in_db(self, user_id: int, order_data: dict) -> bool:
         """Создание заказа в базе данных с учетом новых полей"""
         try:

@@ -16,7 +16,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # Импортируем модели для создания таблиц
-from .models import Base, Order, Product, Category, OrderStatus, User, ProductPhoto, OrderStatusEnum, OrderNote
+from .models import Base, Order, Product, Category, OrderStatus, User, ProductPhoto, OrderStatusEnum, OrderNote, UserFavorite
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -1243,6 +1243,127 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка при получении товара: {e}")
             return None
+        
+    # --- Методы для работы с избранным ---
+
+    def add_to_favorites(self, telegram_id: int, product_id: int) -> bool:
+        """Добавить товар в избранное"""
+        try:
+            with self.session_scope() as session:
+                # Получаем пользователя по telegram_id
+                user = session.query(User).filter_by(telegram_id=telegram_id).first()
+                if not user:
+                    logger.error(f"Пользователь с telegram_id {telegram_id} не найден")
+                    return False
+                
+                # Проверяем, не добавлен ли уже товар
+                existing_favorite = session.query(UserFavorite).filter_by(
+                    user_id=user.id, 
+                    product_id=product_id
+                ).first()
+                
+                if existing_favorite:
+                    logger.info(f"Товар {product_id} уже в избранном у пользователя {telegram_id}")
+                    return True  # Уже в избранном, считаем успехом
+                
+                # Добавляем в избранное
+                favorite = UserFavorite(
+                    user_id=user.id,
+                    product_id=product_id
+                )
+                session.add(favorite)
+                logger.info(f"Товар {product_id} добавлен в избранное пользователя {telegram_id}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении в избранное: {e}")
+            return False
+
+    def remove_from_favorites(self, telegram_id: int, product_id: int) -> bool:
+        """Удалить товар из избранного"""
+        try:
+            with self.session_scope() as session:
+                # Получаем пользователя по telegram_id
+                user = session.query(User).filter_by(telegram_id=telegram_id).first()
+                if not user:
+                    logger.error(f"Пользователь с telegram_id {telegram_id} не найден")
+                    return False
+                
+                # Находим и удаляем запись
+                favorite = session.query(UserFavorite).filter_by(
+                    user_id=user.id, 
+                    product_id=product_id
+                ).first()
+                
+                if favorite:
+                    session.delete(favorite)
+                    logger.info(f"Товар {product_id} удален из избранного пользователя {telegram_id}")
+                    return True
+                else:
+                    logger.info(f"Товар {product_id} не найден в избранном пользователя {telegram_id}")
+                    return True  # Уже удален, считаем успехом
+                    
+        except Exception as e:
+            logger.error(f"Ошибка при удалении из избранного: {e}")
+            return False
+
+    def get_user_favorites(self, telegram_id: int) -> List[dict]:
+        """Получить избранные товары пользователя"""
+        try:
+            with self.session_scope() as session:
+                # Получаем пользователя по telegram_id
+                user = session.query(User).filter_by(telegram_id=telegram_id).first()
+                if not user:
+                    logger.warning(f"Пользователь с telegram_id {telegram_id} не найден")
+                    return []
+                
+                # Получаем избранные товары
+                favorites = session.query(UserFavorite).filter_by(user_id=user.id).all()
+                
+                result = []
+                for favorite in favorites:
+                    product = session.query(Product).filter_by(id=favorite.product_id).first()
+                    if product and product.is_available:  # Только доступные товары
+                        result.append({
+                            'id': product.id,
+                            'name': product.name,
+                            'category_id': product.category_id,
+                            'cover_photo_path': product.cover_photo_path,
+                            'short_description': product.short_description,
+                            'price': float(product.price),
+                            'is_available': product.is_available,
+                            'measurement_unit': product.measurement_unit,
+                            'quantity': float(product.quantity),
+                            'prepayment_conditions': product.prepayment_conditions,
+                            'created_at': product.created_at,
+                            'favorite_id': favorite.id
+                        })
+                
+                return result
+                
+        except Exception as e:
+            logger.error(f"Ошибка при получении избранного: {e}")
+            return []
+
+    def is_in_favorites(self, telegram_id: int, product_id: int) -> bool:
+        """Проверить, есть ли товар в избранном"""
+        try:
+            with self.session_scope() as session:
+                user = session.query(User).filter_by(telegram_id=telegram_id).first()
+                if not user:
+                    return False
+                
+                favorite = session.query(UserFavorite).filter_by(
+                    user_id=user.id, 
+                    product_id=product_id
+                ).first()
+                
+                return favorite is not None
+                
+        except Exception as e:
+            logger.error(f"Ошибка при проверке избранного: {e}")
+            return False
 
 # Глобальный экземпляр менеджера БД
 db_manager = DatabaseManager()
+

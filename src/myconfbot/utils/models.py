@@ -137,3 +137,22 @@ class User(Base):
     orders = relationship("Order", back_populates="user", foreign_keys=[Order.user_id])
     executed_orders = relationship("Order", back_populates="executor", foreign_keys=[Order.executor_id])
     order_notes = relationship("OrderNote", back_populates="user")
+class UserFavorite(Base):
+    __tablename__ = "user_favorites"
+    
+    id = sa.Column(sa.Integer, primary_key=True)
+    user_id = sa.Column(sa.Integer, sa.ForeignKey("users.id"), nullable=False)
+    product_id = sa.Column(sa.Integer, sa.ForeignKey("products.id"), nullable=False)
+    created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
+    
+    # Связи
+    user = relationship("User", backref="favorites")
+    product = relationship("Product")
+    
+    # Уникальный индекс для предотвращения дублирования
+    __table_args__ = (
+        sa.UniqueConstraint('user_id', 'product_id', name='unique_user_product_favorite'),
+    )
+
+    def __repr__(self):
+        return f"UserFavorite(user_id={self.user_id}, product_id={self.product_id})"

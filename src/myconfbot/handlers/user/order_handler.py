@@ -128,6 +128,23 @@ class OrderHandler(BaseUserHandler):
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('order_favorite_'))
         def handle_order_favorite(callback: CallbackQuery):
             self._handle_add_to_favorite(callback)
+
+        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('userfavorite_'))
+        def handle_favorite_callbacks(callback: CallbackQuery):
+            """Обработка всех callback'ов избранного"""
+            try:
+                if callback.data.startswith('userfavorite_details_'):
+                    self._handle_favorite_details(callback)
+                elif callback.data.startswith('userfavorite_order_'):
+                    self._handle_favorite_order(callback)
+                elif callback.data.startswith('userfavorite_remove_'):
+                    self._handle_favorite_remove(callback)
+                elif callback.data == 'userfavorite_back_list':
+                    self._handle_favorite_back_list(callback)
+                    
+            except Exception as e:
+                logger.error(f"Ошибка в favorite callback: {e}")
+                self.bot.answer_callback_query(callback.id, "❌ Ошибка")
         
         @self.bot.callback_query_handler(func=lambda call: call.data.startswith('order_start_'))
         def handle_order_start(callback: CallbackQuery):
@@ -461,13 +478,19 @@ class OrderHandler(BaseUserHandler):
         """Добавление товара в избранное"""
         try:
             product_id = int(callback.data.replace('order_favorite_', ''))
+            user_id = callback.from_user.id
             
-            # TODO: Реализовать добавление в избранное
-            self.bot.answer_callback_query(
-                callback.id, 
-                "⭐ Товар добавлен в избранное"
-            )
+            # Добавляем в избранное
+            success = self.db_manager.add_to_favorites(user_id, product_id)
             
+            if success:
+                self.bot.answer_callback_query(
+                    callback.id, 
+                    "⭐ Товар добавлен в избранное"
+                )
+            else:
+                self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+                
         except Exception as e:
             logger.error(f"Ошибка при добавлении в избранное: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка")
@@ -659,5 +682,198 @@ class OrderHandler(BaseUserHandler):
             callback_data="main_menu"
         ))
         return keyboard
+    
+    ### методы работы с избранным
+
+    def show_favorites(self, message: Message):
+        """Показать избранные товары"""
+        try:
+            user_id = message.from_user.id
+            favorites = self.db_manager.get_user_favorites(user_id)
+            
+            if not favorites:
+                self.bot.send_message(
+                    message.chat.id,
+                    "⭐ <b>Ваше избранное пусто</b>\n\n"
+                    "Добавляйте товары в избранное, нажимая на звездочку ★ в меню продукции",
+                    parse_mode='HTML',
+                    reply_markup=self._create_back_to_main_keyboard()
+                )
+                return
+            
+            # Отправляем заголовок
+            self.bot.send_message(
+                message.chat.id,
+                f"⭐ <b>Ваши избранные товары</b>\n\n"
+                f"Найдено товаров: {len(favorites)}",
+                parse_mode='HTML'
+            )
+            
+            # Отправляем каждый товар с кнопкой
+            for product in favorites:
+                self._send_favorite_product_with_buttons(message.chat.id, product)
+            
+            # Кнопка назад в главное меню
+            keyboard = types.InlineKeyboardMarkup()
+            keyboard.add(types.InlineKeyboardButton(
+                "🔙 Главное меню",
+                callback_data="main_menu"
+            ))
+            
+            self.bot.send_message(
+                message.chat.id,
+                "⬆️ <b>Выберите товар из списка выше:</b>",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            
+        except Exception as e:
+            logger.error(f"Ошибка при показе избранного: {e}")
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Произошла ошибка при загрузке избранного",
+                reply_markup=self._create_back_to_main_keyboard()
+            )
+
+    def _send_favorite_product_with_buttons(self, chat_id, product):
+        """Отправка избранного товара с кнопками действий"""
+        try:
+            # Формируем подпись
+            short_desc = product['short_description'] or ''
+            if len(short_desc) > 60:
+                short_desc = short_desc[:60] + "..."
+            
+            caption = f"⭐ <b>{product['name']}</b>\n{short_desc}\n💰 Цена: {product['price']} руб."
+            
+            # Создаем кнопки действий
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            keyboard.add(types.InlineKeyboardButton(
+                "🔍 Подробнее",
+                callback_data=f"userfavorite_details_{product['id']}"
+            ))
+            keyboard.add(types.InlineKeyboardButton(
+                "🛒 Заказать",
+                callback_data=f"userfavorite_order_{product['id']}"
+            ))
+            keyboard.add(types.InlineKeyboardButton(
+                "❌ Удалить из избранного",
+                callback_data=f"userfavorite_remove_{product['id']}"
+            ))
+            
+            # Проверяем наличие фото
+            cover_photo_path = product.get('cover_photo_path')
+            if cover_photo_path and os.path.exists(cover_photo_path):
+                # Отправляем фото с кнопками
+                with open(cover_photo_path, 'rb') as photo:
+                    self.bot.send_photo(
+                        chat_id,
+                        photo,
+                        caption=caption,
+                        parse_mode='HTML',
+                        reply_markup=keyboard
+                    )
+            else:
+                # Если фото нет, отправляем только текст с кнопками
+                self.bot.send_message(
+                    chat_id,
+                    caption,
+                    parse_mode='HTML',
+                    reply_markup=keyboard
+                )
+                
+        except Exception as e:
+            logger.error(f"Ошибка отправки избранного товара {product['id']}: {e}")
+
+    def _handle_favorite_details(self, callback: CallbackQuery):
+        """Обработка просмотра деталей избранного товара"""
+        try:
+            product_id = int(callback.data.replace('userfavorite_details_', ''))
+            
+            # Показываем детальную информацию о товаре
+            self.product_viewer.show_product_summary(callback.message, product_id)
+            
+            # Добавляем кнопки действий для избранного
+            keyboard = types.InlineKeyboardMarkup(row_width=1)
+            keyboard.add(types.InlineKeyboardButton(
+                "🛒 Заказать",
+                callback_data=f"userfavorite_order_{product_id}"
+            ))
+            keyboard.add(types.InlineKeyboardButton(
+                "❌ Удалить из избранного", 
+                callback_data=f"userfavorite_remove_{product_id}"
+            ))
+            keyboard.add(types.InlineKeyboardButton(
+                "🔙 Назад к избранному",
+                callback_data="userfavorite_back_list"
+            ))
+            
+            self.bot.send_message(
+                callback.message.chat.id,
+                "⬇️ <b>Выберите действие:</b>",
+                parse_mode='HTML',
+                reply_markup=keyboard
+            )
+            
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при просмотре избранного товара: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
+    def _handle_favorite_order(self, callback: CallbackQuery):
+        """Обработка заказа из избранного"""
+        try:
+            product_id = int(callback.data.replace('userfavorite_order_', ''))
+            
+            # Начинаем процесс заказа
+            user_id = callback.from_user.id
+            self.order_states.start_order(user_id, product_id)
+            
+            # Переходим к шагу количества
+            self.order_processor._ask_quantity(callback.message, product_id)
+            
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при заказе из избранного: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
+    def _handle_favorite_remove(self, callback: CallbackQuery):
+        """Обработка удаления из избранного"""
+        try:
+            product_id = int(callback.data.replace('userfavorite_remove_', ''))
+            user_id = callback.from_user.id
+            
+            # Удаляем из избранного
+            success = self.db_manager.remove_from_favorites(user_id, product_id)
+            
+            if success:
+                # Удаляем сообщение с товаром
+                try:
+                    self.bot.delete_message(
+                        callback.message.chat.id,
+                        callback.message.message_id
+                    )
+                except:
+                    pass  # Если не удалось удалить сообщение - не критично
+                
+                self.bot.answer_callback_query(callback.id, "✅ Удалено из избранного")
+            else:
+                self.bot.answer_callback_query(callback.id, "❌ Ошибка при удалении")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при удалении из избранного: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
+    def _handle_favorite_back_list(self, callback: CallbackQuery):
+        """Возврат к списку избранного"""
+        try:
+            self.show_favorites(callback.message)
+            self.bot.answer_callback_query(callback.id)
+            
+        except Exception as e:
+            logger.error(f"Ошибка при возврате к избранному: {e}")
+            self.bot.answer_callback_query(callback.id, "❌ Ошибка")
+
     
   

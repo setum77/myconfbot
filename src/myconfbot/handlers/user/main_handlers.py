@@ -50,8 +50,8 @@ class MainHandler(BaseUserHandler):
         def show_my_orders(message: Message):
             self._show_my_orders(message)
         
-        @self.bot.message_handler(func=lambda message: message.text == '⭐ Избранное')
-        def show_favorites(message: Message):
+        @self.bot.message_handler(func=lambda message: message.text == "⭐ Избранное")
+        def handle_favorites_message(message: Message):
             self._show_favorites(message)
     
     def _register_admin_buttons_handlers(self):
@@ -84,8 +84,9 @@ class MainHandler(BaseUserHandler):
 
     def _show_favorites(self, message: Message):
         """Показать избранное"""
-        # TODO: Реализовать позже  
-        self.bot.send_message(message.chat.id, "⭐ Функция 'Избранное' в разработке")
+        from .order_handler import OrderHandler
+        order_handler = OrderHandler(self.bot, self.config, self.db_manager)
+        order_handler.show_favorites(message)
     
     def _register_content_handlers(self):
         """Регистрация обработчиков контента"""
