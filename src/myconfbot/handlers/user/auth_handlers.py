@@ -4,6 +4,7 @@ import logging
 from telebot.types import Message
 
 from src.myconfbot.handlers.user.base_user_handler import BaseUserHandler
+from src.myconfbot.handlers.shared.constants import UserStates, Validation
 
 
 class AuthHandler(BaseUserHandler):
@@ -23,7 +24,7 @@ class AuthHandler(BaseUserHandler):
         """Регистрация обработчика ввода имени"""
         @self.bot.message_handler(
             func=lambda message: self.states_manager.get_user_state(message.from_user.id) is not None and
-            self.states_manager.get_user_state(message.from_user.id).get('state') == 'awaiting_name'
+            self.states_manager.get_user_state(message.from_user.id).get('state') == UserStates.AWAITING_NAME
         )
         def handle_name_input(message: Message):
             self._handle_name_input(message)
@@ -32,7 +33,7 @@ class AuthHandler(BaseUserHandler):
         """Регистрация обработчика ввода телефона"""
         @self.bot.message_handler(
             func=lambda message: self.states_manager.get_user_state(message.from_user.id) is not None and
-            self.states_manager.get_user_state(message.from_user.id).get('state') == 'awaiting_phone'
+            self.states_manager.get_user_state(message.from_user.id).get('state') == UserStates.AWAITING_PHONE
         )
         def handle_phone_input(message: Message):
             self._handle_phone_input(message)
@@ -41,7 +42,7 @@ class AuthHandler(BaseUserHandler):
         """Регистрация обработчика ввода адреса"""
         @self.bot.message_handler(
             func=lambda message: self.states_manager.get_user_state(message.from_user.id) is not None and
-            self.states_manager.get_user_state(message.from_user.id).get('state') == 'awaiting_address'
+            self.states_manager.get_user_state(message.from_user.id).get('state') == UserStates.AWAITING_ADDRESS
         )
         def handle_address_input(message: Message):
             self._handle_address_input(message)
@@ -56,7 +57,7 @@ class AuthHandler(BaseUserHandler):
         is_admin = user_state.get('is_admin', False)
         username = user_state.get('username')
         
-        if len(name) < 2:
+        if len(name) < Validation.MIN_NAME_LENGTH:
             self.bot.send_message(chat_id, "Пожалуйста, введите настоящее имя (минимум 2 символа).")
             return
         
@@ -70,7 +71,7 @@ class AuthHandler(BaseUserHandler):
             
             if is_admin:
                 # Для администратора запрашиваем дополнительные данные
-                user_state['state'] = 'awaiting_phone'
+                user_state['state'] = UserStates.AWAITING_PHONE
                 user_state['name'] = name
                 self.states_manager.set_user_state(user_id, user_state)
                 self.bot.send_message(chat_id, "Отлично! Теперь укажите ваш телефонный номер:")
@@ -94,14 +95,14 @@ class AuthHandler(BaseUserHandler):
         user_state = self.states_manager.get_user_state(user_id)
         
         # Простая валидация телефона
-        if not any(char.isdigit() for char in phone) or len(phone) < 5:
+        if not any(char.isdigit() for char in phone) or len(phone) < Validation.MIN_PHONE_DIGITS:
             self.bot.send_message(chat_id, "Пожалуйста, введите корректный телефонный номер.")
             return
         
         try:
             # Обновляем состояние
             user_state['phone'] = phone
-            user_state['state'] = 'awaiting_address'
+            user_state['state'] = UserStates.AWAITING_ADDRESS
             self.states_manager.set_user_state(user_id, user_state)
             
             self.bot.send_message(chat_id, "Отлично! Теперь укажите ваш адрес:")
@@ -120,7 +121,7 @@ class AuthHandler(BaseUserHandler):
         name = user_state.get('name')
         phone = user_state.get('phone')
         
-        if len(address) < 5:
+        if len(address) < Validation.MIN_ADDRESS_LENGTH:
             self.bot.send_message(chat_id, "Пожалуйста, введите полный адрес.")
             return
         

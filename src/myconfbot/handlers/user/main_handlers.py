@@ -2,13 +2,13 @@
 
 import logging
 logger = logging.getLogger(__name__)
-import os
-from typing import Optional
 
-from telebot import types
-from telebot.types import Message, CallbackQuery
+from telebot.types import Message
 from src.myconfbot.utils.content_manager import ContentManager
 from src.myconfbot.handlers.user.base_user_handler import BaseUserHandler
+from src.myconfbot.handlers.shared.constants import UserStates, ButtonText, Validation
+from src.myconfbot.keyboards.user_keyboards import UserKeyboards
+from src.myconfbot.keyboards.admin_keyboards import AdminKeyboards
 
 
 class MainHandler(BaseUserHandler):
@@ -38,29 +38,60 @@ class MainHandler(BaseUserHandler):
         def show_menu(message: Message):
             self._show_menu_command(message)
         
-        @self.bot.message_handler(func=lambda message: message.text == '🐱 Мой профиль')
+        @self.bot.message_handler(func=lambda message: message.text == ButtonText.PROFILE)
         def show_my_profile(message: Message):
             self._show_my_profile(message)
 
-        @self.bot.message_handler(func=lambda message: message.text == '🎂 Продукция')
+        @self.bot.message_handler(func=lambda message: message.text == ButtonText.PRODUCTS)
         def show_products(message: Message):
             self._show_products(message)
         
-        @self.bot.message_handler(func=lambda message: message.text == '📋 Мои заказы')
+        @self.bot.message_handler(func=lambda message: message.text == ButtonText.MY_ORDERS)
         def show_my_orders(message: Message):
             self._show_my_orders(message)
         
-        @self.bot.message_handler(func=lambda message: message.text == "⭐ Избранное")
+        @self.bot.message_handler(func=lambda message: message.text == ButtonText.FAVORITES)
         def handle_favorites_message(message: Message):
             self._show_favorites(message)
-    
+
     def _register_admin_buttons_handlers(self):
         """Регистрация обработчиков админских кнопок"""
-        admin_buttons = ['📦 Заказы', '📊 Статистика', '🏪 Управление']
+        admin_buttons = [ButtonText.ORDERS, ButtonText.STATISTICS, ButtonText.MANAGEMENT]
         
         @self.bot.message_handler(func=lambda message: message.text in admin_buttons)
         def handle_admin_buttons(message: Message):
             self._handle_admin_buttons(message)
+
+    def _register_content_handlers(self):
+        """Регистрация обработчиков контента"""
+        @self.bot.message_handler(func=lambda message: message.text == ButtonText.CONTACTS)
+        def send_contacts(message: Message):
+            self._send_contacts(message)
+        
+        @self.bot.message_handler(func=lambda message: message.text == ButtonText.SERVICES)
+        def send_services(message: Message):
+            self._send_services(message)
+        
+        @self.bot.message_handler(func=lambda message: message.text == ButtonText.RECIPES)
+        def show_recipes(message: Message):
+            self._show_recipes(message)
+    
+    def _register_state_handlers(self):
+        """Регистрация обработчиков состояний"""
+        @self.bot.message_handler(
+            func=lambda message: self.states_manager.get_user_state(message.from_user.id) is not None
+        )
+        def handle_state_message(message: Message):
+            self._handle_user_state(message)
+    
+    # Обработчики команд
+
+    def _show_menu_command(self, message: Message):
+        """Показ главного меню"""
+        user_id = message.from_user.id
+        is_admin = self.is_admin(user_id)
+        markup = self.show_main_menu(message.chat.id, is_admin)
+        self.bot.send_message(message.chat.id, "Главное меню", reply_markup=markup)
 
     def _show_products(self, message: Message):
         """Показать продукцию"""
@@ -71,7 +102,6 @@ class MainHandler(BaseUserHandler):
     def _show_my_orders(self, message: Message):
         """Показать мои заказы"""
         try:
-            # Импортируем здесь чтобы избежать циклических импортов
             from .my_order_handler import MyOrderHandler
             my_order_handler = MyOrderHandler(self.bot, self.config, self.db_manager)
             my_order_handler.show_user_orders(message)
@@ -87,28 +117,12 @@ class MainHandler(BaseUserHandler):
         from .order_handler import OrderHandler
         order_handler = OrderHandler(self.bot, self.config, self.db_manager)
         order_handler.show_favorites(message)
-    
-    def _register_content_handlers(self):
-        """Регистрация обработчиков контента"""
-        @self.bot.message_handler(func=lambda message: message.text == '📞 Контакты')
-        def send_contacts(message: Message):
-            self._send_contacts(message)
-        
-        @self.bot.message_handler(func=lambda message: message.text == '💼 Услуги')
-        def send_services(message: Message):
-            self._send_services(message)
-        
-        @self.bot.message_handler(func=lambda message: message.text == '📖 Рецепты')
-        def show_recipes(message: Message):
-            self._show_recipes(message)
-    
-    def _register_state_handlers(self):
-        """Регистрация обработчиков состояний"""
-        @self.bot.message_handler(
-            func=lambda message: self.states_manager.get_user_state(message.from_user.id) is not None
-        )
-        def handle_state_message(message: Message):
-            self._handle_user_state(message)
+
+    def _show_my_profile(self, message: Message):
+        """Показ профиля пользователя"""
+        from .profile_handlers import ProfileHandler
+        profile_handler = ProfileHandler(self.bot, self.config, self.db_manager)
+        profile_handler.show_my_profile(message)
     
     def _handle_start_command(self, message: Message):
         """Обработка команд /start и /help"""
@@ -118,8 +132,6 @@ class MainHandler(BaseUserHandler):
         username = message.from_user.username
         
         try:
-            # Используем менеджер базы данных для получения информации о пользователе
-            # без работы с ORM объектами напрямую
             user_info = self.db_manager.get_user_info(user_id)
             
             if user_info:
@@ -145,7 +157,7 @@ class MainHandler(BaseUserHandler):
                     if is_admin:
                         self.bot.send_message(chat_id, "Добро пожаловать, администратор! 👑")
                         # Устанавливаем состояние для запроса телефона
-                        self.states_manager.set_user_state(user_id, {'state': 'awaiting_phone'})
+                        self.states_manager.set_user_state(user_id, {'state': UserStates.AWAITING_PHONE})
                         self.bot.send_message(chat_id, "Пожалуйста, укажите ваш телефонный номер:")
                     else:
                         welcome_msg = f"Приятно познакомиться, {full_name}! 😊"
@@ -167,13 +179,6 @@ class MainHandler(BaseUserHandler):
             logger.error(f"⛔️ Ошибка при обработке /start: {e}", exc_info=True)
             self.bot.send_message(chat_id, "Произошла ошибка. Попробуйте позже.")
     
-    def _show_menu_command(self, message: Message):
-        """Показ главного меню"""
-        user_id = message.from_user.id
-        is_admin = self.is_admin(user_id)
-        markup = self.show_main_menu(message.chat.id, is_admin)
-        self.bot.send_message(message.chat.id, "Главное меню", reply_markup=markup)
-    
     def _handle_admin_buttons(self, message: Message):
         """Обработка админских кнопок"""
         user_id = message.from_user.id
@@ -183,57 +188,26 @@ class MainHandler(BaseUserHandler):
             self.bot.send_message(chat_id, "❌ У вас нет прав администратора.")
             return
         
-        if message.text == '📦 Заказы':
+        if message.text == ButtonText.ORDERS:
             self._show_orders_management(message)
-        elif message.text == '📊 Статистика':
+        elif message.text == ButtonText.STATISTICS:
             self._show_statistics(message)
-        elif message.text == '🏪 Управление':
+        elif message.text == ButtonText.MANAGEMENT:
             self._show_management_panel(message)
     
     def _show_orders_management(self, message: Message):
         """Показ управления заказами"""
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(
-            types.InlineKeyboardButton("📋 Активные заказы", callback_data="admin_orders_active"),
-            types.InlineKeyboardButton("📊 Все заказы", callback_data="admin_orders_all")
-        )
-        keyboard.add(
-            types.InlineKeyboardButton("🔄 Изменить статус", callback_data="admin_orders_change_status"),
-            types.InlineKeyboardButton("📈 Статистика заказов", callback_data="admin_orders_stats")
-        )
-        
+        keyboard = AdminKeyboards.get_orders_management()
         self.bot.send_message(message.chat.id, "📦 Управление заказами\nВыберите действие:", reply_markup=keyboard)
     
     def _show_statistics(self, message: Message):
         """Показ статистики"""
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(
-            types.InlineKeyboardButton("📊 Общая статистика", callback_data="admin_stats_general"),
-            types.InlineKeyboardButton("💰 Финансовая", callback_data="admin_stats_financial")
-        )
-        keyboard.add(
-            types.InlineKeyboardButton("👥 Клиентская", callback_data="admin_stats_clients"),
-            types.InlineKeyboardButton("🎂 Товарная", callback_data="admin_stats_products")
-        )
-        
+        keyboard = AdminKeyboards.get_statistics_keyboard()
         self.bot.send_message(message.chat.id, "📊 Статистика\nВыберите раздел:", reply_markup=keyboard)
     
     def _show_management_panel(self, message: Message):
         """Показ панели управления"""
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(
-            types.InlineKeyboardButton("🎂 Продукция", callback_data="admin_manage_products"),
-            types.InlineKeyboardButton("📖 Рецепты", callback_data="admin_manage_recipes")
-        )
-        keyboard.add(
-            types.InlineKeyboardButton("💼 Услуги", callback_data="admin_manage_services"),
-            types.InlineKeyboardButton("📞 Контакты", callback_data="admin_manage_contacts")
-        )
-        keyboard.add(
-            types.InlineKeyboardButton("📄 Контент", callback_data="admin_manage_content"),
-            types.InlineKeyboardButton("👥 Пользователи", callback_data="admin_manage_users")
-        )
-        
+        keyboard = AdminKeyboards.get_management_panel()
         self.bot.send_message(message.chat.id, "🏪 Панель управления\nВыберите раздел:", reply_markup=keyboard)
     
     def _send_contacts(self, message: Message):
@@ -252,16 +226,7 @@ class MainHandler(BaseUserHandler):
     
     def _show_recipes(self, message: Message):
         """Показ рецептов"""
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(
-            types.InlineKeyboardButton("🍰 Торты", callback_data="recipes_cakes"),
-            types.InlineKeyboardButton("🧁 Капкейки", callback_data="recipes_cupcakes")
-        )
-        keyboard.add(
-            types.InlineKeyboardButton("🍪 Печенье", callback_data="recipes_cookies"),
-            types.InlineKeyboardButton("🎂 Сезонные", callback_data="recipes_seasonal")
-        )
-        
+        keyboard = UserKeyboards.get_recipes_keyboard()
         self.bot.send_message(message.chat.id, "📖 Наши рецепты\nВыберите категорию:", reply_markup=keyboard)
     
     def _handle_user_state(self, message: Message):
@@ -274,11 +239,10 @@ class MainHandler(BaseUserHandler):
         
         state = user_state.get('state')
         
-        if state == 'awaiting_phone':
+        if state == UserStates.AWAITING_PHONE:
             self._handle_phone_input(message, user_state)
-        elif state == 'awaiting_address':
+        elif state == UserStates.AWAITING_ADDRESS:
             self._handle_address_input(message, user_state)
-        # Добавьте другие состояния по мере необходимости
     
     def _handle_phone_input(self, message: Message, user_state: dict):
         """Обработка ввода телефона"""
@@ -287,13 +251,13 @@ class MainHandler(BaseUserHandler):
         phone = message.text.strip()
         
         # Простая валидация телефона
-        if not any(char.isdigit() for char in phone) or len(phone) < 5:
+        if not any(char.isdigit() for char in phone) or len(phone) < Validation.MIN_PHONE_DIGITS:
             self.bot.send_message(chat_id, "Пожалуйста, введите корректный телефонный номер.")
             return
         
         # Обновляем состояние
         user_state['phone'] = phone
-        user_state['state'] = 'awaiting_address'
+        user_state['state'] = UserStates.AWAITING_ADDRESS
         self.states_manager.set_user_state(user_id, user_state)
         
         self.bot.send_message(chat_id, "Отлично! Теперь укажите ваш адрес:")
@@ -304,7 +268,7 @@ class MainHandler(BaseUserHandler):
         chat_id = message.chat.id
         address = message.text.strip()
         
-        if len(address) < 5:
+        if len(address) < Validation.MIN_ADDRESS_LENGTH:
             self.bot.send_message(chat_id, "Пожалуйста, введите полный адрес.")
             return
         
@@ -335,10 +299,3 @@ class MainHandler(BaseUserHandler):
         except Exception as e:
             logger.error(f"⛔️ Ошибка при сохранении адреса: {e}", exc_info=True)
             self.bot.send_message(chat_id, "Произошла ошибка при сохранении. Попробуйте еще раз.")
-    
-    def _show_my_profile(self, message: Message):
-        """Показ профиля пользователя - делегируем ProfileHandler"""
-        # Импортируем здесь чтобы избежать циклических импортов
-        from .profile_handlers import ProfileHandler
-        profile_handler = ProfileHandler(self.bot, self.config, self.db_manager)
-        profile_handler.show_my_profile(message)

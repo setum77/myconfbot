@@ -3,13 +3,14 @@
 import logging
 from abc import ABC, abstractmethod
 from telebot import TeleBot
-from telebot.types import Message, CallbackQuery
+from telebot.types import Message
 
 from src.myconfbot.config import Config
 from src.myconfbot.utils.database import DatabaseManager
 from src.myconfbot.handlers.shared.states_manager import StatesManager
 from src.myconfbot.services.user_service import UserService
 from src.myconfbot.services.auth_service import AuthService
+from src.myconfbot.keyboards.user_keyboards import UserKeyboards
 
 
 class BaseUserHandler(ABC):
@@ -35,28 +36,7 @@ class BaseUserHandler(ABC):
     
     def show_main_menu(self, chat_id: int, is_admin: bool = False):
         """Показать главное меню"""
-        from telebot import types
-        
-        markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=3)
-        
-        buttons = [
-            '🎂 Продукция',
-            '📋 Мои заказы',
-            '⭐ Избранное',
-            '📖 Рецепты', 
-            '💼 Услуги',
-            '📞 Контакты',
-            '🐱 Мой профиль'
-        ]
-        
-        if is_admin:
-            buttons.extend([
-                '📦 Заказы',
-                '📊 Статистика',
-                '🏪 Управление'
-            ])
-        
-        markup.add(*[types.KeyboardButton(btn) for btn in buttons])
+        markup = UserKeyboards.get_main_menu(is_admin)
         return markup
     
     def send_formatted_message(self, chat_id: int, content: str, parse_mode: str = 'MarkdownV2'):
