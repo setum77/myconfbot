@@ -1363,6 +1363,417 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка при проверке избранного: {e}")
             return False
+        
+    # --- Методы для работы со статусами заказов (с примечаниями админа) ---
+    
+    def add_order_status(self, order_id: int, status: str, admin_notes: str = None, photo_path: str = None) -> bool:
+        """
+        Добавление статуса заказа с примечанием админа
+        
+        Args:
+            order_id: ID заказа
+            status: Статус заказа
+            admin_notes: Примечание админа (опционально)
+            photo_path: Путь к фото (опционально)
+            
+        Returns:
+            bool: Успешность операции
+        """
+        try:
+            with self.session_scope() as session:
+                order_status = OrderStatus(
+                    order_id=order_id,
+                    status=status,
+                    admin_notes=admin_notes,  # Новое поле
+                    photo_path=photo_path,
+                    created_at=datetime.utcnow()
+                )
+                session.add(order_status)
+                logger.info(f"✅ Добавлен статус для заказа {order_id}: {status}")
+                if admin_notes:
+                    logger.info(f"📝 Примечание админа: {admin_notes}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при добавлении статуса заказа: {e}")
+            return False
+    
+    def get_order_status_history(self, order_id: int) -> List[dict]:
+        """
+        Получение полной истории статусов заказа с примечаниями админа
+        
+        Args:
+            order_id: ID заказа
+            
+        Returns:
+            list: Список статусов с примечаниями
+        """
+        try:
+            with self.session_scope() as session:
+                from .models import OrderStatus
+                
+                statuses = session.query(OrderStatus).filter_by(
+                    order_id=order_id
+                ).order_by(OrderStatus.created_at.desc()).all()
+                
+                result = []
+                for status in statuses:
+                    result.append({
+                        'id': status.id,
+                        'order_id': status.order_id,
+                        'status': status.status,
+                        'admin_notes': status.admin_notes,
+                        'photo_path': status.photo_path,
+                        'created_at': status.created_at
+                    })
+                
+                return result
+                
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при получении истории статусов: {e}")
+            return []
+    
+    def get_current_order_status_with_notes(self, order_id: int) -> Optional[dict]:
+        """
+        Получить текущий статус заказа с примечанием админа
+        
+        Args:
+            order_id: ID заказа
+            
+        Returns:
+            dict: Информация о текущем статусе или None
+        """
+        try:
+            with self.session_scope() as session:
+                last_status = session.query(OrderStatus).filter_by(
+                    order_id=order_id
+                ).order_by(OrderStatus.created_at.desc()).first()
+                
+                if last_status:
+                    return {
+                        'status': last_status.status,
+                        'admin_notes': last_status.admin_notes,
+                        'photo_path': last_status.photo_path,
+                        'created_at': last_status.created_at
+                    }
+                return None
+                
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при получении текущего статуса: {e}")
+            return None
+    
+    def update_order_status_notes(self, status_id: int, admin_notes: str) -> bool:
+        """
+        Обновление примечания админа для статуса заказа
+        
+        Args:
+            status_id: ID записи статуса
+            admin_notes: Новое примечание
+            
+        Returns:
+            bool: Успешность операции
+        """
+        try:
+            with self.session_scope() as session:
+                status = session.query(OrderStatus).filter_by(id=status_id).first()
+                if status:
+                    status.admin_notes = admin_notes
+                    logger.info(f"✅ Обновлено примечание для статуса {status_id}")
+                    return True
+                return False
+                
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при обновлении примечания статуса: {e}")
+            return False
+    
+    def get_orders_with_admin_notes(self) -> List[dict]:
+        """
+        Получить заказы, у которых есть примечания админа в статусах
+        
+        Returns:
+            list: Список заказов с примечаниями
+        """
+        try:
+            with self.session_scope() as session:
+                # Находим статусы с примечаниями админа
+                statuses_with_notes = session.query(OrderStatus).filter(
+                    OrderStatus.admin_notes.isnot(None),
+                    OrderStatus.admin_notes != ''
+                ).order_by(OrderStatus.created_at.desc()).all()
+                
+                result = []
+                for status in statuses_with_notes:
+                    order = session.query(Order).filter_by(id=status.order_id).first()
+                    if order:
+                        result.append({
+                            'order_id': order.id,
+                            'status_id': status.id,
+                            'status': status.status,
+                            'admin_notes': status.admin_notes,
+                            'status_created_at': status.created_at,
+                            'order_created_at': order.created_at
+                        })
+                
+                return result
+                
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при получении заказов с примечаниями: {e}")
+            return []
+    
+    def get_active_orders(self) -> List[dict]:
+        """
+        Получить активные заказы (статус не "Выполнен / Завершён")
+        
+        Returns:
+            list: Список активных заказов
+        """
+        try:
+            with self.session_scope() as session:
+                from sqlalchemy import func
+                
+                # Подзапрос для получения последнего статуса каждого заказа
+                last_status_subquery = (
+                    session.query(
+                        OrderStatus.order_id,
+                        func.max(OrderStatus.created_at).label('max_date')
+                    )
+                    .group_by(OrderStatus.order_id)
+                    .subquery()
+                )
+                
+                # Основной запрос для активных заказов
+                active_orders = (
+                    session.query(Order, Product, OrderStatus, User)
+                    .join(Product, Order.product_id == Product.id)
+                    .join(OrderStatus, Order.id == OrderStatus.order_id)
+                    .join(User, Order.user_id == User.id)
+                    .join(
+                        last_status_subquery,
+                        (OrderStatus.order_id == last_status_subquery.c.order_id) &
+                        (OrderStatus.created_at == last_status_subquery.c.max_date)
+                    )
+                    .filter(OrderStatus.status != 'Выполнен / Завершён')
+                    .order_by(Order.created_at.desc())
+                    .all()
+                )
+                
+                result = []
+                for order, product, status, user in active_orders:
+                    result.append({
+                        'id': order.id,
+                        'user_name': user.full_name,
+                        'user_telegram_id': user.telegram_id,
+                        'product_name': product.name,
+                        'product_id': product.id,
+                        'ready_at': order.ready_at,
+                        'quantity': order.quantity,
+                        'weight_grams': order.weight_grams,
+                        'total_cost': float(order.total_cost) if order.total_cost else 0,
+                        'delivery_type': order.delivery_type,
+                        'payment_status': order.payment_status,
+                        'current_status': status.status,
+                        'status_admin_notes': status.admin_notes,
+                        'order_created_at': order.created_at
+                    })
+                
+                return result
+                
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при получении активных заказов: {e}")
+            return []
+    
+    def get_order_full_details(self, order_id: int) -> Optional[dict]:
+        """
+        Получить полную информацию о заказе для администратора
+        
+        Args:
+            order_id: ID заказа
+            
+        Returns:
+            dict: Полная информация о заказе
+        """
+        try:
+            with self.session_scope() as session:
+                order = session.query(Order).filter_by(id=order_id).first()
+                if not order:
+                    return None
+                
+                product = session.query(Product).filter_by(id=order.product_id).first()
+                user = session.query(User).filter_by(id=order.user_id).first()
+                category = session.query(Category).filter_by(id=product.category_id).first() if product else None
+                
+                # Последний статус
+                last_status = (
+                    session.query(OrderStatus)
+                    .filter_by(order_id=order_id)
+                    .order_by(OrderStatus.created_at.desc())
+                    .first()
+                )
+                
+                # История статусов
+                status_history = (
+                    session.query(OrderStatus)
+                    .filter_by(order_id=order_id)
+                    .order_by(OrderStatus.created_at.desc())
+                    .all()
+                )
+                
+                # Примечания к заказу
+                order_notes = (
+                    session.query(OrderNote)
+                    .filter_by(order_id=order_id)
+                    .order_by(OrderNote.created_at)
+                    .all()
+                )
+                
+                # Форматируем историю статусов
+                formatted_status_history = []
+                for status in status_history:
+                    formatted_status_history.append({
+                        'status': status.status,
+                        'admin_notes': status.admin_notes,
+                        'photo_path': status.photo_path,
+                        'created_at': status.created_at
+                    })
+                
+                # Форматируем примечания
+                formatted_notes = []
+                for note in order_notes:
+                    note_user = session.query(User).filter_by(id=note.user_id).first()
+                    formatted_notes.append({
+                        'user_name': note_user.full_name if note_user else 'Неизвестно',
+                        'note_text': note.note_text,
+                        'created_at': note.created_at,
+                        'is_admin': note_user.is_admin if note_user else False
+                    })
+                
+                # Формируем информацию о текущем статусе с проверкой на None
+                current_status_info = None
+                if last_status:
+                    current_status_info = {
+                        'status': last_status.status,
+                        'admin_notes': last_status.admin_notes,
+                        'created_at': last_status.created_at
+                    }
+                else:
+                    current_status_info = {
+                        'status': 'Неизвестно',
+                        'admin_notes': None,
+                        'created_at': None
+                    }
+                
+                return {
+                    'order': {
+                        'id': order.id,
+                        'user_id': order.user_id,
+                        'product_id': order.product_id,
+                        'quantity': order.quantity,
+                        'weight_grams': order.weight_grams,
+                        'delivery_type': order.delivery_type,
+                        'delivery_address': order.delivery_address,
+                        'created_at': order.created_at,
+                        'ready_at': order.ready_at,
+                        'total_cost': float(order.total_cost) if order.total_cost else 0,
+                        'payment_type': order.payment_type,
+                        'payment_status': order.payment_status,
+                        'admin_notes': order.admin_notes
+                    },
+                    'user': {
+                        'id': user.id if user else None,
+                        'telegram_id': user.telegram_id if user else None,
+                        'full_name': user.full_name if user else 'Неизвестно',
+                        'telegram_username': user.telegram_username if user else None,
+                        'phone': user.phone if user else None,
+                        'address': user.address if user else None
+                    },
+                    'product': {
+                        'id': product.id if product else None,
+                        'name': product.name if product else 'Неизвестно',
+                        'category_id': product.category_id if product else None,
+                        'measurement_unit': product.measurement_unit if product else 'шт',
+                        'price': float(product.price) if product else 0
+                    },
+                    'category': {
+                        'id': category.id if category else None,
+                        'name': category.name if category else 'Неизвестно'
+                    },
+                    'current_status': current_status_info,
+                    'status_history': formatted_status_history,
+                    'order_notes': formatted_notes
+                }
+                
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при получении полной информации о заказе: {e}")
+            return None
+    
+    def update_order_admin_notes(self, order_id: int, admin_notes: str) -> bool:
+        """
+        Обновление примечания админа для заказа (не для статуса)
+        
+        Args:
+            order_id: ID заказа
+            admin_notes: Примечание админа
+            
+        Returns:
+            bool: Успешность операции
+        """
+        try:
+            with self.session_scope() as session:
+                order = session.query(Order).filter_by(id=order_id).first()
+                if order:
+                    order.admin_notes = admin_notes
+                    logger.info(f"✅ Обновлено примечание админа для заказа {order_id}")
+                    return True
+                return False
+                
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при обновлении примечания заказа: {e}")
+            return False
+
+    # --- Методы для работы с OrderStatusEnum ---
+    
+    def get_available_statuses(self) -> List[str]:
+        """
+        Получить список доступных статусов из OrderStatusEnum
+        
+        Returns:
+            list: Список статусов
+        """
+        try:
+            return [status.value for status in OrderStatusEnum]
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при получении списка статусов: {e}")
+            return []
+    
+    def is_valid_status(self, status: str) -> bool:
+        """
+        Проверить, является ли статус валидным
+        
+        Args:
+            status: Проверяемый статус
+            
+        Returns:
+            bool: True если статус валиден
+        """
+        try:
+            return status in [status_enum.value for status_enum in OrderStatusEnum]
+        except Exception as e:
+            logger.error(f"⛔️ Ошибка при проверке статуса: {e}")
+            return False
+        
+    def update_order_field(self, order_id: int, field: str, value) -> bool:
+        """Обновление поля заказа"""
+        try:
+            with self.session_scope() as session:
+                order = session.query(Order).filter_by(id=order_id).first()
+                if order:
+                    if hasattr(order, field):
+                        setattr(order, field, value)
+                        return True
+                return False
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении поля заказа {order_id}.{field}: {e}")
+            return False
 
 # Глобальный экземпляр менеджера БД
 db_manager = DatabaseManager()

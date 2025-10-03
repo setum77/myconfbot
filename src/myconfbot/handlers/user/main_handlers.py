@@ -197,7 +197,8 @@ class MainHandler(BaseUserHandler):
     
     def _show_orders_management(self, message: Message):
         """Показ управления заказами"""
-        keyboard = AdminKeyboards.get_orders_management()
+        from src.myconfbot.handlers.shared.admin_constants import AdminConstants
+        keyboard = AdminConstants.get_orders_management_keyboard()
         self.bot.send_message(message.chat.id, "📦 Управление заказами\nВыберите действие:", reply_markup=keyboard)
     
     def _show_statistics(self, message: Message):

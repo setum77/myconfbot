@@ -1,6 +1,8 @@
 # src/myconfbot/handlers/user/my_order_handler.py
 
 import logging
+import os
+from pathlib import Path
 from datetime import datetime
 from telebot import types
 from telebot.types import Message, CallbackQuery, ReplyKeyboardRemove
@@ -114,9 +116,9 @@ class MyOrderHandler(BaseUserHandler):
         except Exception as e:
             logger.error(f"Ошибка при показе деталей заказа: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при загрузке заказа")
-    
+
     def _show_order_status(self, callback: CallbackQuery):
-        """Показать историю статусов заказа"""
+        """Показать историю статусов заказа с фото"""
         try:
             order_id = int(callback.data.replace('my_order_status_', ''))
             status_history = self._get_order_status_history(order_id)
@@ -125,9 +127,11 @@ class MyOrderHandler(BaseUserHandler):
                 self.bot.answer_callback_query(callback.id, "❌ История статусов не найдена")
                 return
             
-            message_text = self._format_status_history(status_history)
+            # Получаем текст и информацию о фото
+            message_text, has_photos, photos_data = self._format_status_history(status_history)
             keyboard = MyOrderConstants.create_back_to_orders_keyboard()
             
+            # Сначала отправляем текстовое сообщение
             self.bot.edit_message_text(
                 chat_id=callback.message.chat.id,
                 message_id=callback.message.message_id,
@@ -136,11 +140,75 @@ class MyOrderHandler(BaseUserHandler):
                 reply_markup=keyboard
             )
             
+            # Затем отправляем фото, если они есть
+            if has_photos:
+                for photo_data in photos_data:
+                    try:
+                        caption = (f"📸 <b>Фото к статусу:</b> {photo_data['status']}\n"
+                                f"📅 <b>Дата:</b> {photo_data['created_at'].strftime('%d.%m.%Y %H:%M')}")
+                        # Проверяем существование файла перед отправкой
+                        if photo_data['photo_path'] and os.path.exists(photo_data['photo_path']):
+
+                            with open(photo_data['photo_path'], 'rb') as photo:
+                                self.bot.send_photo(
+                                    chat_id=callback.message.chat.id,
+                                    photo=photo,
+                                    caption=caption,
+                                    parse_mode='HTML'
+                                )
+                            logger.info(f"Фото успешно отправлено: {photo_data['photo_path']}")
+                        else:
+                            logger.error(f"Файл не существует: {photo_data['photo_path']}")
+                            self.bot.send_message(
+                                chat_id=callback.message.chat.id,
+                                text=f"❌ Фото для статуса '{photo_data['status']}' не найдено\n"
+                                    f"Путь: {photo_data['photo_path']}"
+                            )
+                    except FileNotFoundError:
+                        logger.error(f"Фото не найдено: {photo_data['photo_path']}")
+                        self.bot.send_message(
+                            chat_id=callback.message.chat.id,
+                            text=f"❌ Фото для статуса '{photo_data['status']}' не найдено на сервере"
+                        )
+                    except Exception as e:
+                        logger.error(f"Ошибка при отправке фото: {e}")
+                        self.bot.send_message(
+                            chat_id=callback.message.chat.id,
+                            text=f"❌ Ошибка при отправке фото для статуса '{photo_data['status']}': {str(e)}"
+                        )
+            
             self.bot.answer_callback_query(callback.id)
             
         except Exception as e:
             logger.error(f"Ошибка при показе статусов заказа: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при загрузке статусов")
+    
+    # def _show_order_status(self, callback: CallbackQuery):
+    #     """Показать историю статусов заказа"""
+    #     try:
+    #         order_id = int(callback.data.replace('my_order_status_', ''))
+    #         status_history = self._get_order_status_history(order_id)
+            
+    #         if not status_history:
+    #             self.bot.answer_callback_query(callback.id, "❌ История статусов не найдена")
+    #             return
+            
+    #         message_text = self._format_status_history(status_history)
+    #         keyboard = MyOrderConstants.create_back_to_orders_keyboard()
+            
+    #         self.bot.edit_message_text(
+    #             chat_id=callback.message.chat.id,
+    #             message_id=callback.message.message_id,
+    #             text=message_text,
+    #             parse_mode='HTML',
+    #             reply_markup=keyboard
+    #         )
+            
+    #         self.bot.answer_callback_query(callback.id)
+            
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при показе статусов заказа: {e}")
+    #         self.bot.answer_callback_query(callback.id, "❌ Ошибка при загрузке статусов")
     
     def _show_order_notes(self, callback: CallbackQuery):
         """Показать примечания к заказу"""
@@ -364,12 +432,17 @@ class MyOrderHandler(BaseUserHandler):
                 # Преобразуем в словари чтобы избежать проблем с сессией
                 result = []
                 for status in status_history:
+                    photo_path = None
+                    if status.photo_path:
+                        # строим абсолютный путь используя config.py
+                        photo_path = str(self.config.files.resolve_relative_path(status.photo_path))
+                    
                     result.append({
                         'id': status.id,
                         'order_id': status.order_id,
                         'status': status.status,
                         'created_at': status.created_at,
-                        'photo_path': status.photo_path
+                        'photo_path': photo_path  
                     })
                 
                 return result
@@ -377,6 +450,33 @@ class MyOrderHandler(BaseUserHandler):
         except Exception as e:
             logger.error(f"Ошибка при получении истории статусов: {e}")
             return []
+
+    # def _get_order_status_history(self, order_id: int) -> list:
+    #     """Получить историю статусов заказа"""
+    #     try:
+    #         with self.db_manager.session_scope() as session:
+    #             from src.myconfbot.utils.models import OrderStatus
+                
+    #             status_history = session.query(OrderStatus).filter_by(
+    #                 order_id=order_id
+    #             ).order_by(OrderStatus.created_at).all()
+                
+    #             # Преобразуем в словари чтобы избежать проблем с сессией
+    #             result = []
+    #             for status in status_history:
+    #                 result.append({
+    #                     'id': status.id,
+    #                     'order_id': status.order_id,
+    #                     'status': status.status,
+    #                     'created_at': status.created_at,
+    #                     'photo_path': status.photo_path
+    #                 })
+                
+    #             return result
+                
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при получении истории статусов: {e}")
+    #         return []
     
     def _format_order_summary(self, order_details: dict) -> str:
         """Форматирование сводной информации о заказе"""
@@ -438,19 +538,43 @@ class MyOrderHandler(BaseUserHandler):
         return text
     
     def _format_status_history(self, status_history: list) -> str:
-        """Форматирование истории статусов"""
+        """Форматирование истории статусов с отправкой фото"""
         text = "🔄 <b>История статусов заказа</b>\n\n"
+        
+        has_photos = False
+        photos_data = []  # Будем хранить данные о фото для отправки
         
         for status in status_history:
             text += f"📅 <b>{status['created_at'].strftime('%d.%m.%Y %H:%M')}</b>\n"
-            text += f"🔄 <b>Статус:</b> {status['status']}\n"
+            text += f"<b>Статус:</b> {status['status']}\n"
             
             if status['photo_path']:
                 text += f"📸 <b>Есть фото</b>\n"
+                has_photos = True
+                photos_data.append({
+                    'status': status['status'],
+                    'created_at': status['created_at'],
+                    'photo_path': status['photo_path']
+                })
             
             text += "━━━━━━━━━━━━━━━━━━━━\n\n"
         
-        return text
+        return text, has_photos, photos_data
+    
+    # def _format_status_history(self, status_history: list) -> str:
+    #     """Форматирование истории статусов"""
+    #     text = "🔄 <b>История статусов заказа</b>\n\n"
+        
+    #     for status in status_history:
+    #         text += f"📅 <b>{status['created_at'].strftime('%d.%m.%Y %H:%M')}</b>\n"
+    #         text += f" <b>Статус:</b> {status['status']}\n"
+            
+    #         if status['photo_path']:
+    #             text += f"📸 <b>Есть фото</b>\n"
+            
+    #         text += "━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+    #     return text
     
     def _format_order_notes(self, order_notes: list) -> str:
         """Форматирование примечаний к заказу"""

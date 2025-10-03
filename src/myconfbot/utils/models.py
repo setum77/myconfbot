@@ -76,6 +76,7 @@ class OrderStatus(Base):
     id = sa.Column(sa.Integer, primary_key=True)
     order_id = sa.Column(sa.Integer, sa.ForeignKey("orders.id"), nullable=False)
     status = sa.Column(sa.String(100), nullable=False)
+    admin_notes = sa.Column(sa.Text)
     created_at = sa.Column(sa.DateTime, default=datetime.utcnow)
     photo_path = sa.Column(sa.String(255))
     

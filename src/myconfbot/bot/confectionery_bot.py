@@ -16,6 +16,7 @@ from src.myconfbot.utils.database import db_manager
 from src.myconfbot.handlers import HandlerFactory
 from src.myconfbot.handlers.user.order_handler import OrderHandler
 from src.myconfbot.handlers.user.my_order_handler import MyOrderHandler
+from src.myconfbot.handlers.admin.order_admin_handler import OrderAdminHandler
 
 
 # Загрузка переменных окружения
@@ -34,6 +35,8 @@ class ConfectioneryBot:
         order_handler.register_handlers()
         my_order_handler = MyOrderHandler(self.bot, config, db_manager)
         my_order_handler.register_handlers()
+        order_admin_handler = OrderAdminHandler(self.bot, config, db_manager)
+        order_admin_handler.register_handlers()
         
         logger.info("Бот инициализирован")
 

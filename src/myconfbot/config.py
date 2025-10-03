@@ -25,11 +25,92 @@ class DatabaseConfig:
         else:
             self.url = os.getenv('DATABASE_URL', 'sqlite:///data/confbot.db')
 
+class FileStorageConfig:
+    def __init__(self):
+        # Базовая директория для всех файлов
+        self.base_dir = Path(os.getenv('FILE_STORAGE_BASE_DIR', 'data'))
+        
+        # Поддиректории для разных типов файлов
+        self.orders_dir = self.base_dir / 'orders'
+        self.products_dir = self.base_dir / 'products' 
+        self.users_dir = self.base_dir / 'users'
+        self.temp_dir = self.base_dir / 'temp'
+        
+        # Создаем директории при инициализации
+        self._create_directories()
+    
+    def _create_directories(self):
+        """Создание необходимых директорий"""
+        try:
+            self.base_dir.mkdir(exist_ok=True)
+            self.orders_dir.mkdir(exist_ok=True)
+            self.products_dir.mkdir(exist_ok=True)
+            self.users_dir.mkdir(exist_ok=True)
+            self.temp_dir.mkdir(exist_ok=True)
+            logger.info(f"Директории файлового хранилища созданы в: {self.base_dir}")
+        except Exception as e:
+            logger.error(f"Ошибка при создании директорий: {e}")
+    
+    def get_order_path(self, order_id: int, filename: str = None) -> Path:
+        """Получить путь к файлам заказа"""
+        order_dir = self.orders_dir / f"order_{order_id}"
+        order_dir.mkdir(exist_ok=True)
+        
+        if filename:
+            return order_dir / filename
+        return order_dir
+    
+    def get_order_status_photos_path(self, order_id: int, filename: str = None) -> Path:
+        """Получить путь к фото статусов заказа"""
+        status_dir = self.get_order_path(order_id) / "status_photos"
+        status_dir.mkdir(exist_ok=True)
+        
+        if filename:
+            return status_dir / filename
+        return status_dir
+    
+    def get_product_path(self, product_id: int, filename: str = None) -> Path:
+        """Получить путь к файлам продукта"""
+        product_dir = self.products_dir / str(product_id)
+        product_dir.mkdir(exist_ok=True)
+        
+        if filename:
+            return product_dir / filename
+        return product_dir
+    
+    def get_user_path(self, telegram_id: int, filename: str = None) -> Path:
+        """Получить путь к файлам пользователя"""
+        user_dir = self.users_dir / str(telegram_id)
+        user_dir.mkdir(exist_ok=True, parents=True)
+        
+        if filename:
+            return user_dir / filename
+        return user_dir
+    
+    def get_temp_path(self, filename: str = None) -> Path:
+        """Получить путь к временным файлам"""
+        if filename:
+            return self.temp_dir / filename
+        return self.temp_dir
+    
+    def resolve_relative_path(self, relative_path: str) -> Path:
+        """Преобразовать относительный путь в абсолютный"""
+        if not relative_path:
+            return None
+        
+        # Если путь уже абсолютный, возвращаем как есть
+        if os.path.isabs(relative_path):
+            return Path(relative_path)
+        
+        # Иначе считаем, что путь относительный от base_dir
+        return self.base_dir / relative_path
+
 class Config:
     def __init__(self, bot_token=None, admin_ids=None):
         self.bot_token = bot_token or self.get_bot_token()
         self.admin_ids = admin_ids or self.get_admin_ids()
         self.db = DatabaseConfig()
+        self.files = FileStorageConfig()
     
     @staticmethod
     def get_bot_token():
@@ -64,5 +145,6 @@ class Config:
         return (
             f"Config(bot_token={self.bot_token[:10]}..., "
             f"admin_ids={self.admin_ids}, "
-            f"db_url={self.db.url})"
+            f"db_url={self.db.url})",
+            f"files_base_dir={self.files.base_dir})"
         )

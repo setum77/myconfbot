@@ -61,29 +61,6 @@ class OrderConstants:
         return keyboard
         
         
-        # # Добавляем кнопки категорий в два ряда
-        # buttons = []
-        # for category in categories:
-        #     button = types.InlineKeyboardButton(
-        #         f"📁 {category['name']}",
-        #         callback_data=f"order_category_{category['id']}"
-        #     )
-        #     buttons.append(button)
-        
-        # # Распределяем по два в ряд
-        # for i in range(0, len(buttons), 2):
-        #     if i + 1 < len(buttons):
-        #         keyboard.add(buttons[i], buttons[i + 1])
-        #     else:
-        #         keyboard.add(buttons[i])
-        
-        # # Кнопка назад
-        # keyboard.add(types.InlineKeyboardButton(
-        #     "🔙 Назад",
-        #     callback_data=back_callback
-        # ))
-        
-        # return keyboard
     
     @staticmethod
     def create_products_keyboard(products, back_callback):
@@ -110,31 +87,6 @@ class OrderConstants:
         
         return keyboard
 
-    # @staticmethod
-    # def create_products_keyboard(products, back_callback):
-    #     """Создание клавиатуры для выбора товара"""
-    #     keyboard = types.InlineKeyboardMarkup(row_width=1)
-        
-    #     for product in products:
-    #         # Обрезаем описание до 25 символов
-    #         short_desc = product['short_description'] or ''
-    #         if len(short_desc) > 25:
-    #             short_desc = short_desc[:25] + "..."
-            
-    #         button_text = f"🎂 {product['name']} - {short_desc}"
-            
-    #         # ИСПРАВЛЕНИЕ: Просто создаем кнопку, без попытки отправки медиа
-    #         keyboard.add(types.InlineKeyboardButton(
-    #             button_text,
-    #             callback_data=f"order_product_{product['id']}"
-    #         ))
-        
-    #     keyboard.add(types.InlineKeyboardButton(
-    #         "🔙 Назад к категориям",
-    #         callback_data=back_callback
-    #     ))
-        
-    #     return keyboard
     
     @staticmethod
     def create_product_actions_keyboard(product_id, back_callback):
