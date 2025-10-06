@@ -8,7 +8,7 @@ from telebot.types import Message, CallbackQuery
 
 from .admin_base import BaseAdminHandler
 from .product_states import ProductState
-from .product_constants import ProductConstants
+from ..shared.product_constants import ProductConstants
 from .product_creator import ProductCreator
 from .product_editor import ProductEditor
 from .product_viewer import ProductViewer
@@ -52,27 +52,27 @@ class ProductManagementHandler(BaseAdminHandler):
         def handle_photo_callbacks(callback: CallbackQuery):
             self.photo_manager.handle_photo_callbacks(callback)
         
-        # Обработчик добавления фото
-        @self.bot.message_handler(
-            func=lambda message: (
-                self.states_manager.get_product_state(message.from_user.id) == ProductState.ADDING_PHOTOS and
-                message.content_type == 'photo'
-            )
-        )
-        def handle_photo_add(message: Message):
-            user_data = self.states_manager.get_product_data(message.from_user.id)
-            product_id = user_data.get('id')
-            if product_id:
-                logger.info(f"Начало добавления фото для товара {product_id}")
-                success = self.photo_manager.handle_photo_addition(message, product_id)
-                if success:
-                    self.bot.send_message(message.chat.id, "✅ Фото добавлено!")
-                    photos = self.db_manager.get_product_photos(product_id)
-                    logger.info(f"После добавления - фото в базе: {len(photos)} шт.")
-                else:
-                    self.bot.send_message(message.chat.id, "❌ Ошибка при добавлении фото")
-            else:
-                self.bot.send_message(message.chat.id, "❌ Ошибка: товар не найден")
+        # # Обработчик добавления фото
+        # @self.bot.message_handler(
+        #     func=lambda message: (
+        #         self.states_manager.get_product_state(message.from_user.id) == ProductState.ADDING_PHOTOS and
+        #         message.content_type == 'photo'
+        #     )
+        # )
+        # def handle_photo_add(message: Message):
+        #     user_data = self.states_manager.get_product_data(message.from_user.id)
+        #     product_id = user_data.get('id')
+        #     if product_id:
+        #         logger.info(f"Начало добавления фото для товара {product_id}")
+        #         success = self.photo_manager.handle_photo_addition(message, product_id)
+        #         if success:
+        #             self.bot.send_message(message.chat.id, "✅ Фото добавлено!")
+        #             photos = self.db_manager.get_product_photos(product_id)
+        #             logger.info(f"После добавления - фото в базе: {len(photos)} шт.")
+        #         else:
+        #             self.bot.send_message(message.chat.id, "❌ Ошибка при добавлении фото")
+        #     else:
+        #         self.bot.send_message(message.chat.id, "❌ Ошибка: товар не найден")
         
         # Обработчик завершения добавления фото
         @self.bot.message_handler(
@@ -82,16 +82,60 @@ class ProductManagementHandler(BaseAdminHandler):
             )
         )
         def handle_photos_done(message: Message):
-            self.photo_manager.handle_photos_done(message)
+            product_id = self.photo_manager.handle_photos_done(message)
+            if product_id:
+                # После завершения добавления фото показываем итоговую информацию
+                self.viewer.show_product_summary(message, product_id)
+                self.states_manager.clear_product_state(message.from_user.id)
         
-        # # Обработчик вопроса о фото
+        # # # Обработчик вопроса о фото
+        # @self.bot.message_handler(
+        #     func=lambda message: (
+        #         self.states_manager.get_product_state(message.from_user.id) == ProductState.PHOTO_QUESTION
+        #     )
+        # )
+        # def handle_photo_question(message: Message):
+        #     self._handle_photo_question(message)  #
+        
+        # Обработчик выбора фото для установки основного
         @self.bot.message_handler(
             func=lambda message: (
-                self.states_manager.get_product_state(message.from_user.id) == ProductState.PHOTO_QUESTION
+                self.states_manager.get_management_state(message.from_user.id) is not None and
+                self.states_manager.get_management_state(message.from_user.id).get('state') == 'editing_main_photo'
             )
         )
-        def handle_photo_question(message: Message):
-            self._handle_photo_question(message)  #
+        def handle_edit_main_photo_selection(message: Message):
+            self._handle_edit_main_photo_selection(message)
+        
+        # Обработчик выбора фото для удаления
+        @self.bot.message_handler(
+            func=lambda message: (
+                self.states_manager.get_management_state(message.from_user.id) is not None and
+                self.states_manager.get_management_state(message.from_user.id).get('state') == 'editing_delete_photo'
+            )
+        )
+        def handle_edit_photo_deletion(message: Message):
+            self._handle_edit_photo_deletion(message)
+
+        # Обработчик выбора основного фото
+        @self.bot.message_handler(
+            func=lambda message: (
+                self.states_manager.get_management_state(message.from_user.id) is not None and
+                self.states_manager.get_management_state(message.from_user.id).get('state') == 'selecting_main_photo'
+            )
+        )
+        def handle_main_photo_selection(message: Message):
+            self.photo_manager.handle_main_photo_selection(message)
+
+        # Обработчик удаления фото
+        @self.bot.message_handler(
+            func=lambda message: (
+                self.states_manager.get_management_state(message.from_user.id) is not None and
+                self.states_manager.get_management_state(message.from_user.id).get('state') == 'deleting_photo'
+            )
+        )
+        def handle_photo_deletion(message: Message):
+            self.photo_manager.handle_photo_deletion(message)
 
 
     def _register_category_handlers(self):
@@ -126,6 +170,15 @@ class ProductManagementHandler(BaseAdminHandler):
         def handle_edit_callbacks(callback: CallbackQuery):
             self.product_editor.handle_edit_callbacks(callback)
 
+        @self.bot.callback_query_handler(func=lambda call: call.data.startswith('photo_'))
+        def handle_photo_callbacks(callback: CallbackQuery):
+            # Определяем контекст (создание или редактирование)
+            user_state = self.states_manager.get_product_state(callback.from_user.id)
+            if user_state and user_state == 'photo_management':
+                self.photo_manager.handle_photo_callbacks_after_creation(callback)
+            else:
+                self.photo_manager.handle_photo_callbacks(callback)
+
     def _register_state_handlers(self):
         """Регистрация обработчиков состояний"""
         # Обработка основной информации
@@ -147,14 +200,26 @@ class ProductManagementHandler(BaseAdminHandler):
             func=lambda message: self.states_manager.get_product_state(message.from_user.id) == ProductState.CONFIRMATION
         )
         def handle_confirmation(message: Message):
-            self._handle_confirmation(message)
+            self.creator._handle_confirmation(message)
 
-        # Обработка вопроса о фото
+        # Обработка вопроса о фото 
         @self.bot.message_handler(
-            func=lambda message: self.states_manager.get_product_state(message.from_user.id) == ProductState.PHOTO_QUESTION
+            func=lambda message: 
+                self.states_manager.get_product_state(message.from_user.id) == ProductState.PHOTO_QUESTION
         )
         def handle_photo_question(message: Message):
             self._handle_photo_question(message)
+
+        # Обработчик добавления фото в режиме редактирования
+        @self.bot.message_handler(
+            func=lambda message: (
+                self.states_manager.get_management_state(message.from_user.id) is not None and
+                self.states_manager.get_management_state(message.from_user.id).get('state') == 'editing_add_photo'
+            )
+        )
+        def handle_edit_photo_addition(message: Message):
+            self._handle_edit_photo_addition(message)
+
 
         # Обработчик отмены
         @self.bot.message_handler(
@@ -200,57 +265,6 @@ class ProductManagementHandler(BaseAdminHandler):
         except Exception as e:
             logger.error(f"Ошибка в product callback: {e}")
             self.bot.answer_callback_query(callback.id, "❌ Ошибка при обработке")
-
-    def _handle_confirmation(self, message: Message):
-        """Обработка подтверждения сохранения товара"""
-        user_id = message.from_user.id
-        
-        if message.text == "✅ Сохранить":
-            product_data = self.states_manager.get_product_data(user_id)
-            product_id = self.db_manager.add_product_returning_id(product_data)
-            
-            if product_id:
-                # Обновляем данные продукта с ID
-                product_data['id'] = product_id
-                self.states_manager.update_product_data(user_id, product_data)
-                
-                # Спрашиваем про фото
-                self.bot.send_message(
-                    message.chat.id,
-                    f"✅ Товар <b>'{product_data['name']}'</b> успешно сохранен!\n\n"
-                    "📸 Хотите добавить фотографии товара?",
-                    parse_mode='HTML',
-                    reply_markup=ProductConstants.create_photo_question_keyboard()
-                )
-                
-                # Устанавливаем состояние для обработки ответа о фото
-                self.states_manager.set_product_state(user_id, {
-                    'state': ProductState.PHOTO_QUESTION,
-                    'product_data': product_data
-                })
-            else:
-                self.bot.send_message(
-                    message.chat.id,
-                    "❌ Ошибка при сохранении товара.",
-                    reply_markup=ProductConstants.create_confirmation_keyboard()
-                )
-        
-        elif message.text == "✏️ Редактировать":
-            # Возврат к началу редактирования
-            self.states_manager.set_product_state(user_id, {
-                'state': ProductState.WAITING_BASIC_INFO,
-                'product_data': self.states_manager.get_product_data(user_id)
-            })
-            
-            self.bot.send_message(
-                message.chat.id,
-                "📝 Введите <b>название</b> товара:",
-                parse_mode='HTML',
-                reply_markup=ProductConstants.create_cancel_keyboard()
-            )
-        
-        elif message.text == "❌ Отменить":
-            self._cancel_creation(message)
 
     def manage_products(self, message: Message):
         """Управление продукцией"""
@@ -314,33 +328,181 @@ class ProductManagementHandler(BaseAdminHandler):
 
     # метод для обработки вопроса о фото
     def _handle_photo_question(self, message: Message):
-        """Обработка вопроса о добавлении фото после создания товара"""
+        """Обработка вопроса о работе с фото после создания товара"""
         user_id = message.from_user.id
         product_data = self.states_manager.get_product_data(user_id)
         product_id = product_data.get('id')
         
-        if message.text == "✅ Да, добавить фото":
-            # ✅ Правильно - используем метод из photo_manager
-            self.photo_manager.start_photo_addition_after_creation(message, product_id)
+        if message.text == "📸 Работа с фото":
+            # Переходим к управлению фото через photo_manager
+            self.photo_manager.show_photo_management(message, product_id)
             
-        elif message.text == "⏭️ Пропустить":
-            # Завершаем без фото
+        elif message.text == "🏠 В меню продукции":
+            # Завершаем и возвращаем в меню продукции
             self.states_manager.clear_product_state(user_id)
-            product = self.db_manager.get_product_by_id(product_id)
-            
-            self.bot.send_message(
-                message.chat.id,
-                f"✅ Товар '{product['name']}' готов! Можете добавить фото позже через редактирование.",
-                parse_mode='HTML',
-                reply_markup=types.ReplyKeyboardRemove()
-            )
-            
-            # Показываем итоговую информацию о товаре
-            self.viewer.show_product_summary(message, product_id)
+            self._back_to_product_management(message.chat.id)
             
         else:
             self.bot.send_message(
                 message.chat.id,
-                "Пожалуйста, выберите вариант:",
-                reply_markup=ProductConstants.create_photo_question_keyboard()
+                "Пожалуйста, выберите действие:",
+                reply_markup=ProductConstants.create_photo_management_question_keyboard()
+            )
+
+
+    def _handle_edit_photo_addition(self, message: Message):
+        """Обработка добавления фото в режиме редактирования"""
+        user_id = message.from_user.id
+        user_state = self.states_manager.get_management_state(user_id)
+        
+        if not user_state or user_state.get('state') != 'editing_add_photo':
+            return
+        
+        product_id = user_state.get('product_id')
+        
+        if message.text == "✅ Завершить добавление":
+            # Завершаем добавление фото
+            self.states_manager.clear_management_state(user_id)
+            self.bot.send_message(
+                message.chat.id,
+                "✅ Добавление фото завершено!",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            # Возвращаем к управлению фото
+            self.photo_manager.show_photo_management_edit(message, product_id)
+            
+        elif message.text == "❌ Отмена":
+            # Отмена добавления фото
+            self.states_manager.clear_management_state(user_id)
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Добавление фото отменено",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            # Возвращаем к управлению фото
+            self.photo_manager.show_photo_management_edit(message, product_id)
+            
+        elif message.content_type == 'photo':
+            # Обрабатываем добавление фото
+            success = self.photo_manager.handle_photo_addition(message, product_id)
+            if success:
+                self.bot.send_message(message.chat.id, "✅ Фото добавлено! Продолжайте отправлять фото или нажмите '✅ Завершить добавление'")
+            else:
+                self.bot.send_message(message.chat.id, "❌ Ошибка при добавлении фото")
+        
+        else:
+            self.bot.send_message(
+                message.chat.id,
+                "📸 Отправьте фото или нажмите '✅ Завершить добавление'",
+                reply_markup=self.photo_manager._create_photos_done_edit_keyboard()
+            )
+    
+    def _handle_edit_main_photo_selection(self, message: Message):
+        """Обработка выбора основного фото в редактировании"""
+        user_id = message.from_user.id
+        user_state = self.states_manager.get_management_state(user_id)
+        
+        if not user_state:
+            return
+        
+        product_id = user_state.get('product_id')
+        
+        if message.text == "🔙 К управлению фото":
+            self.states_manager.clear_management_state(user_id)
+            # self.photo_manager.show_photo_management_edit(message, product_id)
+            # return
+            self.bot.send_message(
+                message.chat.id,
+                "🔙 Возврат к управлению фото",
+                reply_markup=types.ReplyKeyboardRemove()  # Очищаем клавиатуру
+            )
+            self.photo_manager.show_photo_management_edit(message, product_id)
+            return
+            
+        if message.text == "❌ Отмена":
+            self.states_manager.clear_management_state(user_id)
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Выбор основного фото отменен",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            self.photo_manager.show_photo_management_edit(message, product_id)
+            return
+        
+        try:
+            photo_number = int(message.text)
+            success = self.photo_manager.set_main_photo(product_id, photo_number)
+            
+            if success:
+                self.states_manager.clear_management_state(user_id)
+                self.bot.send_message(
+                    message.chat.id,
+                    "✅ Основное фото установлено!",
+                    reply_markup=types.ReplyKeyboardRemove()
+                )
+                self.photo_manager.show_photo_management_edit(message, product_id)
+            else:
+                self.bot.send_message(
+                    message.chat.id,
+                    "❌ Ошибка при установке основного фото. Попробуйте снова:"
+                )
+                
+        except ValueError:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Пожалуйста, введите номер фото:"
+            )
+
+    def _handle_edit_photo_deletion(self, message: Message):
+        """Обработка удаления фото в редактировании"""
+        user_id = message.from_user.id
+        user_state = self.states_manager.get_management_state(user_id)
+        
+        if not user_state:
+            return
+        
+        product_id = user_state.get('product_id')
+        
+        if message.text == "❌ Отмена удаления":
+            self.states_manager.clear_management_state(user_id)
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Удаление фото отменено",
+                reply_markup=types.ReplyKeyboardRemove()  # Очищаем клавиатуру
+            )
+            self.photo_manager.show_photo_management_edit(message, product_id)
+            return
+            
+        if message.text == "❌ Отмена":
+            self.states_manager.clear_management_state(user_id)
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Удаление фото отменено",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            self.photo_manager.show_photo_management_edit(message, product_id)
+            return
+        
+        try:
+            photo_number = int(message.text)
+            success = self.photo_manager.delete_photo(product_id, photo_number)
+            
+            if success:
+                self.states_manager.clear_management_state(user_id)
+                self.bot.send_message(
+                    message.chat.id,
+                    "✅ Фото удалено!",
+                    reply_markup=types.ReplyKeyboardRemove()
+                )
+                self.photo_manager.show_photo_management_edit(message, product_id)
+            else:
+                self.bot.send_message(
+                    message.chat.id,
+                    "❌ Ошибка при удалении фото. Попробуйте снова:"
+                )
+                
+        except ValueError:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Пожалуйста, введите номер фото:"
             )

@@ -3,7 +3,7 @@ import logging
 import os
 from telebot import types
 from telebot.types import Message, CallbackQuery
-from .product_constants import ProductConstants
+from ..shared.product_constants import ProductConstants
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +93,13 @@ class ProductEditor:
                     self._start_editing_option(callback, product_id, option)
                 else:
                     self.bot.answer_callback_query(callback.id, "❌ Неверный формат callback")
+
+            elif data.startswith('edit_photo_manage_'):
+                product_id = int(data.replace('edit_photo_manage_', ''))
+                self._show_photo_management(callback, product_id)
+                
+            elif data == 'edit_back_to_categories':
+                self.start_editing(callback)
                 
             elif data == 'edit_back_to_categories':
                 self.start_editing(callback)
@@ -267,8 +274,8 @@ class ProductEditor:
         
         # Фото опции
         keyboard.add(
-            types.InlineKeyboardButton("📸 Добавить фото", callback_data=f"edit_option_{product_id}_add_photo"),
-            types.InlineKeyboardButton("🖼️ Выбрать основное", callback_data=f"edit_option_{product_id}_main_photo")
+            types.InlineKeyboardButton("📸 Работа с фото", callback_data=f"photo_manage_{product_id}"),
+            # types.InlineKeyboardButton("🖼️ Выбрать основное", callback_data=f"edit_option_{product_id}_main_photo")
         )
         
         keyboard.add(
@@ -660,65 +667,80 @@ class ProductEditor:
         else:
             self.bot.send_message(message.chat.id, "❌ Ошибка при обновлении доступности")
 
-    def _add_product_photo(self, message: Message, product_id: int):
-        """Добавление фото к товару"""
-        # Проверка на отмену операции
-        if self._check_cancellation(message, product_id):
-            return
-
-        if message.content_type != 'photo':
-            self.bot.send_message(message.chat.id, "❌ Пожалуйста, отправьте фото")
+    def _show_photo_management(self, callback: CallbackQuery, product_id: int):
+        """Показать меню управления фото для товара"""
+        product = self.db_manager.get_product_by_id(product_id)
+        
+        if not product:
+            self.bot.answer_callback_query(callback.id, "❌ Товар не найден")
             return
         
-        try:
-            photo_id = message.photo[-1].file_id
-            photo_path = self._save_photo(photo_id, product_id)
+        # Используем PhotoManager для показа управления фото
+        from .photo_manager import PhotoManager
+        photo_manager = PhotoManager(self.bot, self.db_manager, self.states_manager, self.photos_dir)
+        photo_manager.show_photo_management(callback.message, product_id)
+        
+        self.bot.answer_callback_query(callback.id)
+
+    # def _add_product_photo(self, message: Message, product_id: int):
+    #     """Добавление фото к товару"""
+    #     # Проверка на отмену операции
+    #     if self._check_cancellation(message, product_id):
+    #         return
+
+    #     if message.content_type != 'photo':
+    #         self.bot.send_message(message.chat.id, "❌ Пожалуйста, отправьте фото")
+    #         return
+        
+    #     try:
+    #         photo_id = message.photo[-1].file_id
+    #         photo_path = self._save_photo(photo_id, product_id)
             
-            if photo_path and self.db_manager.add_product_photo(product_id, photo_path, is_main=False):
-                self.bot.send_message(message.chat.id, "✅ Фото добавлено к товару!")
-                self._return_to_edit_options(message, product_id)
-            else:
-                self.bot.send_message(message.chat.id, "❌ Ошибка при добавлении фото")
-        except Exception as e:
-            logger.error(f"Ошибка при добавлении фото: {e}")
-            self.bot.send_message(message.chat.id, "❌ Ошибка при обработке фото")
+    #         if photo_path and self.db_manager.add_product_photo(product_id, photo_path, is_main=False):
+    #             self.bot.send_message(message.chat.id, "✅ Фото добавлено к товару!")
+    #             self._return_to_edit_options(message, product_id)
+    #         else:
+    #             self.bot.send_message(message.chat.id, "❌ Ошибка при добавлении фото")
+    #     except Exception as e:
+    #         logger.error(f"Ошибка при добавлении фото: {e}")
+    #         self.bot.send_message(message.chat.id, "❌ Ошибка при обработке фото")
 
-    def _select_main_photo(self, message: Message, product_id: int):
-        """Выбор основного фото"""
-        # Проверка на отмену операции
-        if self._check_cancellation(message, product_id):
-            return
+    # def _select_main_photo(self, message: Message, product_id: int):
+    #     """Выбор основного фото"""
+    #     # Проверка на отмену операции
+    #     if self._check_cancellation(message, product_id):
+    #         return
 
-        photos = self.db_manager.get_product_photos(product_id)
+    #     photos = self.db_manager.get_product_photos(product_id)
         
-        if not photos:
-            self.bot.send_message(message.chat.id, "❌ У товара нет фотографий")
-            self._return_to_edit_options(message, product_id)
-            return
+    #     if not photos:
+    #         self.bot.send_message(message.chat.id, "❌ У товара нет фотографий")
+    #         self._return_to_edit_options(message, product_id)
+    #         return
         
-        try:
-            photo_number = int(message.text)
-            if 1 <= photo_number <= len(photos):
-                selected_photo = photos[photo_number - 1]
+    #     try:
+    #         photo_number = int(message.text)
+    #         if 1 <= photo_number <= len(photos):
+    #             selected_photo = photos[photo_number - 1]
                 
-                # Устанавливаем выбранное фото как основное
-                if self.db_manager.set_main_photo(product_id, selected_photo['photo_path']):
-                    self.bot.send_message(message.chat.id, "✅ Основное фото установлено!")
-                    self._return_to_edit_options(message, product_id)
-                else:
-                    self.bot.send_message(message.chat.id, "❌ Ошибка при установке основного фото")
-            else:
-                self.bot.send_message(
-                    message.chat.id,
-                    f"❌ Неверный номер. Введите число от 1 до {len(photos)}:",
-                    reply_markup=self._create_photo_selection_keyboard(photos)
-                )
-        except ValueError:
-            self.bot.send_message(
-                message.chat.id,
-                "❌ Пожалуйста, введите номер фото:",
-                reply_markup=self._create_photo_selection_keyboard(photos)
-            )
+    #             # Устанавливаем выбранное фото как основное
+    #             if self.db_manager.set_main_photo(product_id, selected_photo['photo_path']):
+    #                 self.bot.send_message(message.chat.id, "✅ Основное фото установлено!")
+    #                 self._return_to_edit_options(message, product_id)
+    #             else:
+    #                 self.bot.send_message(message.chat.id, "❌ Ошибка при установке основного фото")
+    #         else:
+    #             self.bot.send_message(
+    #                 message.chat.id,
+    #                 f"❌ Неверный номер. Введите число от 1 до {len(photos)}:",
+    #                 reply_markup=self._create_photo_selection_keyboard(photos)
+    #             )
+    #     except ValueError:
+    #         self.bot.send_message(
+    #             message.chat.id,
+    #             "❌ Пожалуйста, введите номер фото:",
+    #             reply_markup=self._create_photo_selection_keyboard(photos)
+            # )
 
     def _show_delete_confirmation(self, callback: CallbackQuery, product_id: int):
         """Показать подтверждение удаления товара"""
@@ -838,8 +860,9 @@ class ProductEditor:
         )
         
         keyboard.add(
-            types.InlineKeyboardButton("📸 Добавить фото", callback_data=f"edit_option_{product_id}_add_photo"),
-            types.InlineKeyboardButton("🖼️ Выбрать основное", callback_data=f"edit_option_{product_id}_main_photo")
+            types.InlineKeyboardButton("📸 Работа с фото", callback_data=f"photo_manage_{product_id}")
+            # types.InlineKeyboardButton("📸 Добавить фото", callback_data=f"edit_option_{product_id}_add_photo"),
+            # types.InlineKeyboardButton("🖼️ Выбрать основное", callback_data=f"edit_option_{product_id}_main_photo")
         )
         
         keyboard.add(types.InlineKeyboardButton(
@@ -958,7 +981,7 @@ class ProductEditor:
 
     def _back_to_products_menu(self, message: Message):
         """Возврат в меню продукции"""
-        from .product_constants import ProductConstants
+        from ..shared.product_constants import ProductConstants
         self.bot.send_message(
             message.chat.id,
             ProductConstants.PRODUCT_MANAGEMENT_TITLE,

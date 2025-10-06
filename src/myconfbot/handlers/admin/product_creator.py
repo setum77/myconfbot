@@ -4,7 +4,7 @@ import os
 import uuid
 from telebot import types
 from telebot.types import Message, CallbackQuery
-from .product_constants import ProductConstants
+from ..shared.product_constants import ProductConstants
 from .product_states import ProductState
 from .photo_manager import PhotoManager
 
@@ -280,7 +280,18 @@ class ProductCreator:
         product_data['prepayment_conditions'] = message.text
         self._update_product_state(user_id, product_data, ProductState.CONFIRMATION)
         
-        self._show_confirmation(message, product_data)
+        self._show_confirmation_with_photos(message, product_data)
+
+    def _show_confirmation_with_photos(self, message: Message, product_data: dict):
+            """Показать подтверждение с опцией работы с фото"""
+            confirmation_text = self._format_confirmation(product_data)
+            
+            self.bot.send_message(
+                message.chat.id,
+                confirmation_text,
+                parse_mode='HTML',
+                reply_markup=ProductConstants.create_confirmation_keyboard()
+            )
 
     def _show_confirmation(self, message: Message, product_data: dict):
         """Показать подтверждение"""
@@ -343,7 +354,6 @@ class ProductCreator:
     #     keyboard.add(types.KeyboardButton("❌ Отмена"))
     #     return keyboard
     
-    # product_creator.py - добавим в конец класса
     def _handle_confirmation(self, message: Message):
         """Обработка подтверждения сохранения товара"""
         # Проверка отмены
@@ -353,34 +363,83 @@ class ProductCreator:
         user_id = message.from_user.id
         
         if message.text == "✅ Сохранить":
-            product_data = self.states_manager.get_product_data(user_id)
-            product_id = self.db_manager.add_product_returning_id(product_data)
+            self._save_product_and_finish(message, user_id)
+        
+        elif message.text == "✏️ Редактировать":
+            # Возврат к началу редактирования
+            self.states_manager.set_product_state(user_id, {
+                'state': ProductState.WAITING_BASIC_INFO,
+                'product_data': self.states_manager.get_product_data(user_id)
+            })
             
-            if product_id:
-                # Обновляем данные продукта с ID
-                product_data['id'] = product_id
-                self.states_manager.update_product_data(user_id, product_data)
-                
-                # Спрашиваем про фото
-                self.bot.send_message(
-                    message.chat.id,
-                    f"✅ Товар <b>'{product_data['name']}'</b> успешно сохранен!\n\n"
-                    "📸 Хотите добавить фотографии товара?",
-                    parse_mode='HTML',
-                    reply_markup=ProductConstants.create_photo_question_keyboard()
-                )
-                
-                # Устанавливаем состояние для обработки ответа о фото
-                self.states_manager.set_product_state(user_id, {
-                    'state': ProductState.PHOTO_QUESTION,
-                    'product_data': product_data
-                })
-            else:
-                self.bot.send_message(
-                    message.chat.id,
-                    "❌ Ошибка при сохранении товара.",
-                    reply_markup=ProductConstants.create_confirmation_keyboard()
-                )
+            self.bot.send_message(
+                message.chat.id,
+                "📝 Введите <b>название</b> товара:",
+                parse_mode='HTML',
+                reply_markup=ProductConstants.create_cancel_keyboard()
+            )
+        
+        elif message.text == "❌ Отменить":
+            self._cancel_creation(message)
+
+    def _save_product_and_finish(self, message: Message, user_id: int):
+        """Сохранить товар и завершить создание"""
+        product_data = self.states_manager.get_product_data(user_id)
+        product_id = self.db_manager.add_product_returning_id(product_data)
+        
+        if product_id:
+            # Обновляем данные продукта с ID
+            product_data['id'] = product_id
+            self.states_manager.update_product_data(user_id, product_data)
+            
+            # Показываем успешное сообщение с кнопкой "Работа с фото"
+            self.bot.send_message(
+                message.chat.id,
+                f"✅ Товар <b>'{product_data['name']}'</b> успешно сохранен!\n\n"
+                "📸 Теперь вы можете добавить фотографии товара:",
+                parse_mode='HTML',
+                reply_markup=ProductConstants.create_photo_management_question_keyboard()
+            )
+            
+            # Устанавливаем состояние для обработки работы с фото
+            self.states_manager.set_product_state(user_id, {
+                'state': ProductState.PHOTO_QUESTION,
+                'product_data': product_data
+            })
+        else:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Ошибка при сохранении товара.",
+                reply_markup=ProductConstants.create_confirmation_keyboard()
+            )
+
+    def _show_product_summary(self, message: Message, product_id: int):
+        """Показать сводку по товару"""
+        # Используем ProductViewer для показа информации о товаре
+        from .product_viewer import ProductViewer
+        product_viewer = ProductViewer(self.bot, self.db_manager, self.photos_dir)
+        product_viewer.show_product_summary(message, product_id)
+
+    def _go_to_photo_management(self, message: Message, user_id: int):
+        """Перейти к управлению фото"""
+        product_data = self.states_manager.get_product_data(user_id)
+        
+        # Сначала сохраняем товар, чтобы получить ID
+        product_id = self.db_manager.add_product_returning_id(product_data)
+        
+        if product_id:
+            product_data['id'] = product_id
+            self.states_manager.update_product_data(user_id, product_data)
+            
+            # Показываем меню управления фото
+            self.photo_manager.show_photo_management_after_creation(message, product_id)
+        else:
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Ошибка при сохранении товара. Нельзя перейти к управлению фото.",
+                reply_markup=ProductConstants.create_confirmation_with_photos_keyboard()
+            )
+    
     def _back_to_product_management(self, chat_id: int):
         """Возврат в меню управления продукцией"""
         self.bot.send_message(
@@ -389,3 +448,25 @@ class ProductCreator:
             reply_markup=ProductConstants.create_management_keyboard(),
             parse_mode='HTML'
         )
+
+    def _handle_photo_question(self, message: Message):
+        """Обработка вопроса о работе с фото после создания товара"""
+        user_id = message.from_user.id
+        product_data = self.states_manager.get_product_data(user_id)
+        product_id = product_data.get('id')
+        
+        if message.text == "📸 Работа с фото":
+            # Переходим к управлению фото через photo_manager
+            self.photo_manager.show_photo_management(message, product_id)
+            
+        elif message.text == "🏠 В меню продукции":
+            # Завершаем и возвращаем в меню продукции
+            self.states_manager.clear_product_state(user_id)
+            self._back_to_product_management(message.chat.id)
+            
+        else:
+            self.bot.send_message(
+                message.chat.id,
+                "Пожалуйста, выберите действие:",
+                reply_markup=ProductConstants.create_photo_management_question_keyboard()
+            )

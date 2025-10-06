@@ -3,7 +3,7 @@ import logging
 import os
 from telebot import types
 from telebot.types import Message, CallbackQuery
-from .product_constants import ProductConstants
+from ..shared.product_constants import ProductConstants
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +214,7 @@ class ProductViewer:
             
             if data == 'view_back_products':
                 # Возврат в меню управления продукцией
-                from .product_constants import ProductConstants
+                from ..shared.product_constants import ProductConstants
                 # Нужно будет передать управление обратно в основной класс
                 self.bot.send_message(
                     callback.message.chat.id,

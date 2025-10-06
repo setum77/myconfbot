@@ -201,6 +201,25 @@ class ProductConstants:
         keyboard.add(types.KeyboardButton("✏️ Редактировать"))
         keyboard.add(types.KeyboardButton("❌ Отменить"))
         return keyboard
+
+    @staticmethod
+    def create_photo_management_keyboard_inline(product_id: int):
+        """Inline клавиатура для управления фото"""
+        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        
+        keyboard.add(
+            types.InlineKeyboardButton("➕ Добавить фото", callback_data=f"photo_add_{product_id}"),
+            types.InlineKeyboardButton("🖼️ Выбрать главное", callback_data=f"photo_set_main_{product_id}")
+        )
+        
+        keyboard.add(
+            types.InlineKeyboardButton("🗑️ Удалить фото", callback_data=f"photo_delete_{product_id}"),
+            types.InlineKeyboardButton("👀 Просмотреть все", callback_data=f"photo_view_{product_id}")
+        )
+        
+        keyboard.add(types.InlineKeyboardButton("🔙 Назад к товару", callback_data=f"photo_back_{product_id}"))
+        
+        return keyboard
     
     @staticmethod
     def create_photo_question_keyboard():
@@ -217,5 +236,13 @@ class ProductConstants:
         keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
         keyboard.add(types.KeyboardButton("✅ Готово"))
         keyboard.add(types.KeyboardButton("❌ Отмена"))
+        return keyboard
+    
+    @staticmethod
+    def create_photo_management_question_keyboard():
+        """Клавиатура с кнопкой 'Работа с фото' после создания товара"""
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        keyboard.add(types.KeyboardButton("📸 Работа с фото"))
+        keyboard.add(types.KeyboardButton("🏠 В меню продукции"))
         return keyboard
     

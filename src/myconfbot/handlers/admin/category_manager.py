@@ -2,7 +2,7 @@
 import logging
 from telebot import types
 from telebot.types import Message, CallbackQuery
-from .product_constants import ProductConstants
+from ..shared.product_constants import ProductConstants
 from .admin_base import BaseAdminHandler
 from src.myconfbot.services.auth_service import AuthService
 

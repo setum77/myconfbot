@@ -6,7 +6,7 @@ class ProductState(Enum):
     WAITING_BASIC_INFO = "waiting_basic_info"  # Название, категория, доступность
     WAITING_DETAILS = "waiting_details"        # Описание, единица измерения, количество, цена, оплата
     CONFIRMATION = "confirmation"              # Подтверждение
-    #PHOTO_MANAGEMENT = "photo_management"
+    # PHOTO_MANAGEMENT = "photo_management"
     PHOTO_QUESTION = "photo_question"        # Новое: вопрос о фото
     ADDING_PHOTOS = "photo_product_adding"       # Управление фото
 
